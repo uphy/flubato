@@ -133,7 +133,13 @@ async function startMic() {
     await mic.start(undefined);
   }
   mic.onFrame = onFrame;
-  mic.onSamples = (d, end) => { S.recorder?.push(d); S.take?.push(d, end); };
+  mic.onSamples = (d, end) => {
+    S.recorder?.push(d);
+    if (!S.take) return;
+    S.take.push(d, end);
+    // マイクを開いた直後に始めた回は、始めた時点で解析の刻みがまだわからない。最初の音が届いたときに埋める
+    S.take.micPhase ??= mic.hopPhase;
+  };
   mic.onEnded = () => {
     if (S.mic !== mic) return;
     S.mic = null;
@@ -590,7 +596,7 @@ function newTake() {
   const r = S.mic.recent();
   if (r.data.length) take.push(r.data, r.end);
   take.afterFrame = S.mic.lastFrameEnd; // これより後の窓から、この回の解析
-  take.micPhase = S.mic.hopPhase ?? 0;
+  take.micPhase = S.mic.hopPhase; // まだ音が届いていなければ null（届いたときに mic.onSamples で埋める）
   return take;
 }
 
