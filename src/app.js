@@ -9,6 +9,7 @@ import { Recorder, Take } from './recorder.js';
 import { practiceReview, gameReview, groupAt, describe, spots } from './review.js';
 import { songToCtx } from './clock.js';
 import { FlexClock } from './flex.js';
+import { listSongs, getSong, saveSong, touchSong, removeSong, clearSongs } from './library.js';
 import demoBytes from '../songs/romance.gp';
 
 const $ = id => document.getElementById(id);
@@ -32,6 +33,7 @@ const S = {
   take: null, // 振り返り用に、いま弾いている回の音をためる
   lastReview: null, // 直前の回の振り返り { data, take, diag（調査用）, song, trackIndex, title }
   songFile: null, // いま開いている曲のファイル { name, bytes }（調査用に保存するときに埋め込む）
+  songId: null, // ライブラリでの id（デモなら null）
   diagMoves: [], // 練習モードでその場で位置が動いたアタック（調査用）
   hub: null, // 振り返り（苦手な箇所の一覧と録音、再生の状態）
   reviewing: false, // 振り返りの画面を開いているか
@@ -91,15 +93,67 @@ function songMeta(c) {
 }
 
 async function openFile(file) {
+  let bytes;
   try {
-    const bytes = new Uint8Array(await file.arrayBuffer());
+    bytes = new Uint8Array(await file.arrayBuffer());
     setScore(loadScore(bytes), null);
-    S.songFile = { name: file.name, bytes };
-    if (!S.score.title) $('title').textContent = file.name.replace(/\.[^.]+$/, '');
   } catch (e) {
     console.error(e);
     toast(`読めませんでした: ${file.name}（Guitar Pro 3〜8 / MusicXML に対応）`);
+    return;
   }
+  S.songFile = { name: file.name, bytes };
+  if (!S.score.title) $('title').textContent = file.name.replace(/\.[^.]+$/, '');
+  closeLibrary();
+  // 読めた曲はライブラリに取っておく。保存できなくても、いま開くのはできている
+  try {
+    S.songId = await saveSong({ name: file.name, title: $('title').textContent, bytes });
+    store.set('lastSong', S.songId);
+  } catch (e) {
+    console.error(e);
+    S.songId = null;
+    toast('曲をこのブラウザに保存できませんでした。次に開くときは、またファイルを選んでください');
+  }
+}
+
+const DEMO_TITLE = 'Romance（デモ・練習用の簡易アレンジ）';
+function openDemo() {
+  setScore(loadScore(new Uint8Array(demoBytes)), DEMO_TITLE);
+  S.songFile = { name: 'romance.gp', bytes: new Uint8Array(demoBytes) };
+  S.songId = null;
+  store.set('lastSong', null);
+}
+
+/** ライブラリに取っておいた曲を開く。前に選んでいたトラックも戻す */
+async function openSaved(id) {
+  const rec = await getSong(id);
+  if (!rec) throw new Error(`ライブラリにない曲: ${id}`);
+  setScore(loadScore(rec.bytes), rec.title);
+  if (rec.trackIndex !== undefined && [...$('track').options].some(o => o.value === String(rec.trackIndex))) {
+    setTrack(rec.trackIndex); $('track').value = String(rec.trackIndex);
+  }
+  S.songFile = { name: rec.name, bytes: rec.bytes };
+  S.songId = id;
+  store.set('lastSong', id);
+  touchSong(id, { openedAt: Date.now() }).catch(() => {});
+}
+
+// ---- ライブラリ（保存した曲の一覧） ----
+async function openLibrary() {
+  closeSettings();
+  $('library').hidden = false; $('scrim').hidden = false;
+  await renderLibrary();
+}
+function closeLibrary() { $('library').hidden = true; $('scrim').hidden = $('settings').hidden; }
+async function renderLibrary() {
+  let songs = [];
+  try { songs = await listSongs(); } catch (e) { console.error(e); }
+  const day = t => new Date(t).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' });
+  const item = (id, title, sub, del) => `<li data-id="${id}" aria-current="${(S.songId ?? 'demo') === id}">` +
+    `<button class="open"><b>${escapeHtml(title)}</b><span>${escapeHtml(sub)}</span></button>` +
+    (del ? `<button class="del icon-btn ghost" title="ライブラリから消す"><svg class="i"><use href="#i-x"/></svg></button>` : '') + '</li>';
+  $('lib-list').innerHTML = songs.map(s => item(s.id, s.title, `${s.name} · ${day(s.openedAt)}に開いた`, true)).join('') +
+    item('demo', DEMO_TITLE, '最初から入っている曲', false);
 }
 
 // ---- 設定 ----
@@ -445,7 +499,7 @@ async function calibrate() {
   if (mode !== 'game') setMode('game'); // 線に合わせて弾くので、音ゲーの画面で
   const tex = `\\tempo 90 . \\track "G" \\staff {tabs} \\tuning e4 b3 g3 d3 a2 e2
 0.1.4 0.1.4 0.1.4 0.1.4 | 0.1.4 0.1.4 0.1.4 0.1.4 | 0.1.4 0.1.4 0.1.4 0.1.4`;
-  S.calibrating = { score: S.score, trackIndex: S.trackIndex, title: $('title').textContent, speed: $('speed').value, mode, songFile: S.songFile };
+  S.calibrating = { score: S.score, trackIndex: S.trackIndex, title: $('title').textContent, speed: $('speed').value, mode, songFile: S.songFile, songId: S.songId };
   $('speed').value = '100'; syncSpeedLabel();
   S.score = scoreFromAlphaTex(tex);
   S.chart = buildChart(S.score, 0);
@@ -469,7 +523,7 @@ function finishCalibration() {
     toast(`音がうまく拾えませんでした（${ds.length}/12）。マイクを近づけてもう一度どうぞ`);
   }
   $('speed').value = back.speed; syncSpeedLabel();
-  if (back.score) { setScore(back.score, back.title); setTrack(back.trackIndex); $('track').value = String(back.trackIndex); S.songFile = back.songFile; }
+  if (back.score) { setScore(back.score, back.title); setTrack(back.trackIndex); $('track').value = String(back.trackIndex); S.songFile = back.songFile; S.songId = back.songId; }
   if (back.mode !== S.mode) setMode(back.mode);
   $('lat').textContent = `${Math.round(S.latency * 1000)}ms`;
 }
@@ -844,8 +898,27 @@ function updateChrome() {
 
 // ---- 設定（右から出る）----
 function openSettings() {
+  closeLibrary();
   $('settings').hidden = false; $('scrim').hidden = false;
   updateMicInfo();
+  updateDataInfo();
+}
+async function updateDataInfo() {
+  const songs = await listSongs().catch(() => []);
+  const mb = songs.reduce((a, s) => a + s.size, 0) / 1024 / 1024;
+  $('data-info').textContent = `保存した曲（${songs.length}曲・${mb < 0.1 ? '0.1MB未満' : `${mb.toFixed(1)}MB`}）と、設定（マイクの遅れの測った値など）を消して、はじめて開いたときの状態に戻します。`;
+}
+async function clearAllData() {
+  if (!confirm('保存した曲と設定をすべて消します。元には戻せません。消しますか？')) return;
+  try {
+    await clearSongs();
+    for (const k of Object.keys(localStorage)) if (k.startsWith('flubato.')) localStorage.removeItem(k);
+  } catch (e) {
+    console.error(e);
+    toast('消せませんでした');
+    return;
+  }
+  location.reload();
 }
 function closeSettings() { $('settings').hidden = true; $('scrim').hidden = true; }
 let toastTimer;
@@ -856,7 +929,32 @@ function toast(msg) {
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 $('file').addEventListener('change', e => { const f = e.target.files[0]; if (f) openFile(f); e.target.value = ''; });
-$('track').addEventListener('change', e => setTrack(Number(e.target.value)));
+$('track').addEventListener('change', e => {
+  setTrack(Number(e.target.value));
+  if (S.songId) touchSong(S.songId, { trackIndex: S.trackIndex }).catch(() => {});
+});
+$('lib-btn').addEventListener('click', openLibrary);
+$('library-close').addEventListener('click', closeLibrary);
+$('lib-list').addEventListener('click', async e => {
+  const li = e.target.closest('[data-id]');
+  if (!li) return;
+  const id = li.dataset.id;
+  if (e.target.closest('.del')) {
+    if (!confirm(`「${li.querySelector('b').textContent}」をライブラリから消しますか？`)) return;
+    await removeSong(id).catch(e => console.error(e));
+    if (S.songId === id) { S.songId = null; store.set('lastSong', null); }
+    return renderLibrary();
+  }
+  if (!e.target.closest('.open')) return;
+  try {
+    if (id === 'demo') openDemo(); else await openSaved(id);
+    closeLibrary();
+  } catch (err) {
+    console.error(err);
+    toast('この曲を開けませんでした');
+    renderLibrary();
+  }
+});
 $('play').addEventListener('click', togglePlay);
 $('speed').addEventListener('input', syncSpeedLabel);
 $('zoom').addEventListener('input', e => { view.pps = Number(e.target.value); store.set('zoom', view.pps); syncRange(e.target); });
@@ -868,7 +966,8 @@ $('mic-btn').addEventListener('click', async () => {
 $('mic-start').addEventListener('click', async () => { try { await ensureAudio(); } catch (e) { micError(e); } });
 navigator.mediaDevices?.addEventListener?.('devicechange', refreshDevices);
 $('settings-close').addEventListener('click', closeSettings);
-$('scrim').addEventListener('click', closeSettings);
+$('clear-data').addEventListener('click', clearAllData);
+$('scrim').addEventListener('click', () => { closeSettings(); closeLibrary(); });
 $('rec-ind').addEventListener('click', toggleRecord);
 $('strict').addEventListener('change', e => store.set('strict', e.target.value));
 $('follow').addEventListener('change', e => store.set('follow', e.target.checked));
@@ -970,7 +1069,8 @@ window.addEventListener('keydown', e => {
     // ボタンにフォーカスがあってもスペースは「はじめる・とめる」に使う（押したボタンをもう一度押さない）
     e.preventDefault(); document.activeElement?.blur?.(); togglePlay();
   } else if (e.key === 'Escape') {
-    if (!$('settings').hidden) closeSettings();
+    if (!$('library').hidden) closeLibrary();
+    else if (!$('settings').hidden) closeSettings();
     else if (!$('result').hidden) $('result').hidden = true;
     else if (!$('presult').hidden) $('presult').hidden = true;
     else if (S.reviewing) closeReview();
@@ -994,8 +1094,10 @@ $('lat').textContent = `${Math.round(S.latency * 1000)}ms`;
 syncSpeedLabel();
 refreshDevices(); // 前に許可をもらっていれば、マイクの名前の一覧が取れる
 updateMicInfo();
-setScore(loadScore(new Uint8Array(demoBytes)), 'Romance（デモ・練習用の簡易アレンジ）');
-S.songFile = { name: 'romance.gp', bytes: new Uint8Array(demoBytes) };
+// 前に開いていた曲をライブラリから開く。なければ（消した・保存できなかった）デモ
+const lastSong = store.get('lastSong', null);
+if (lastSong) await openSaved(lastSong).catch(e => { console.error(e); openDemo(); });
+else openDemo();
 setMode(S.mode);
 requestAnimationFrame(tick);
 
