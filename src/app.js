@@ -11,6 +11,7 @@ import { songToCtx } from './clock.js';
 import { FlexClock } from './flex.js';
 import { listSongs, getSong, saveSong, touchSong, removeSong, clearSongs } from './library.js';
 import { DemoPlayer } from './demo.js';
+import { Tuner } from './tuner.js';
 import demoBytes from '../songs/romance.gp';
 
 const $ = id => document.getElementById(id);
@@ -45,6 +46,7 @@ const S = {
   latency: store.get('latency', 0.05),
   calibrating: null, // 合わせ中は元の譜面を退避
   passes: [],
+  tuner: null, // チューナーを開いているあいだだけ Tuner
 };
 const view = new View($('stage'));
 const sheet = new SheetView($('stage'));
@@ -197,6 +199,7 @@ async function startMic() {
   mic.onFrame = onFrame;
   mic.onSamples = (d, end) => {
     S.recorder?.push(d);
+    S.tuner?.push(d);
     if (!S.take) return;
     S.take.push(d, end);
     // マイクを開いた直後に始めた回は、始めた時点で解析の刻みがまだわからない。最初の音が届いたときに埋める
@@ -976,6 +979,49 @@ async function clearAllData() {
   location.reload();
 }
 function closeSettings() { $('settings').hidden = true; $('scrim').hidden = true; }
+
+// ---- チューナー ----
+// 針の目盛り（±50 セントを ±60° に振る）
+$('tuner').querySelector('.tn-ticks').innerHTML = [-50, -40, -30, -20, -10, 0, 10, 20, 30, 40, 50].map(c => {
+  const a = c * 1.2 * Math.PI / 180;
+  const at = r => [(100 + r * Math.sin(a)).toFixed(1), (100 - r * Math.cos(a)).toFixed(1)];
+  const [x1, y1] = at(78), [x2, y2] = at(Math.abs(c) === 50 || c === 0 ? 62 : 68);
+  return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"${c === 0 ? ' class="mid"' : ''}/>`;
+}).join('');
+
+async function openTuner() {
+  if (S.reviewing && S.hub.playing) reviewPause();
+  if (S.listening) stopPractice(false);
+  if (S.playing) stop();
+  if (S.demo?.playing) stopDemo();
+  closeLibrary();
+  $('tuner').hidden = false;
+  showTuner(null);
+  try { await ensureAudio(); } catch (e) { micError(e); closeTuner(); return; }
+  if ($('tuner').hidden) return; // マイクの許可を待つあいだに閉じた
+  S.tuner = new Tuner(S.audio.sampleRate);
+  requestAnimationFrame(tunerTick);
+}
+function closeTuner() { $('tuner').hidden = true; S.tuner = null; }
+
+let tunerLast = 0;
+function tunerTick(now) {
+  if (!S.tuner) return;
+  requestAnimationFrame(tunerTick);
+  if (now - tunerLast < 50) return; // 測るのは 1 秒に 20 回まで
+  tunerLast = now;
+  showTuner(S.tuner.read(now));
+}
+
+function showTuner(r) {
+  const cents = r ? Math.max(-50, Math.min(50, r.note.cents)) : 0;
+  $('tn-needle').style.transform = `rotate(${cents * 1.2}deg)`;
+  $('tuner').dataset.state = !r ? 'none' : Math.abs(r.note.cents) <= 5 ? 'ok' : 'off';
+  $('tn-note').innerHTML = r ? `${r.note.name}<sub>${r.note.octave}</sub>` : '—';
+  $('tn-sub').textContent = r
+    ? `${r.hz.toFixed(1)} Hz　${r.note.cents >= 0 ? '+' : '−'}${Math.abs(r.note.cents).toFixed(0)} セント`
+    : S.mic ? '弦を1本だけ鳴らしてください' : 'マイクを準備しています';
+}
 let toastTimer;
 function toast(msg) {
   $('toast').textContent = msg; $('toast').hidden = false;
@@ -1015,6 +1061,8 @@ $('demo').addEventListener('click', () => (S.demo?.playing ? stopDemo() : startD
 $('speed').addEventListener('input', syncSpeedLabel);
 $('zoom').addEventListener('input', e => { view.pps = Number(e.target.value); store.set('zoom', view.pps); syncRange(e.target); });
 $('settings-btn').addEventListener('click', openSettings);
+$('tuner-btn').addEventListener('click', openTuner);
+$('tn-close').addEventListener('click', closeTuner);
 $('mic-btn').addEventListener('click', async () => {
   openSettings();
   if (!S.mic) { try { await ensureAudio(); } catch (e) { micError(e); } }
@@ -1122,7 +1170,9 @@ for (const id of ['from', 'to']) $(id).addEventListener('change', () => {
 });
 window.addEventListener('keydown', e => {
   const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName);
-  if (e.code === 'Space' && !typing) {
+  if (!$('tuner').hidden) {
+    if (e.key === 'Escape') closeTuner();
+  } else if (e.code === 'Space' && !typing) {
     // ボタンにフォーカスがあってもスペースは「はじめる・とめる」に使う（押したボタンをもう一度押さない）
     e.preventDefault(); document.activeElement?.blur?.(); togglePlay();
   } else if (e.key === 'Escape') {
