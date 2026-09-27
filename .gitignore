@@ -6,5 +6,5 @@ dist/
 .wrangler-preview.json
 .wrangler/
 
-# 手元の作業メモ（公開しない）
+# 作り始めてからの経緯・進捗・次にやることのメモ。宅内の機器名などが入るので手元にだけ置く
 docs/direction.md
