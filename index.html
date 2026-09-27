@@ -107,6 +107,7 @@ body.reviewing .transport { display: none; }
 body.live #play { background: var(--raised-hi); color: var(--text); box-shadow: none; border-color: var(--line-strong); }
 body.live #play:hover { background: #353c50; }
 body.live #play kbd { color: var(--dim); border-color: var(--line-strong); }
+#demo.on { color: var(--accent); border-color: rgba(255,210,74,.45); background: var(--accent-soft); }
 #speed-v { min-width: 3.2em; color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* ---- 設定（右から出る） ---- */
@@ -215,7 +216,9 @@ body.reviewing #stage { left: 300px; width: calc(100% - 300px); }
   body[data-mode=practice] .t-right { display: none; }
   .t-left { grid-area: l; } .t-right { grid-area: r; justify-content: flex-start; gap: 8px; }
   .transport .hint { display: none; }
-  #play { grid-area: p; min-width: 0; width: 100%; padding: 11px 16px; }
+  #play { grid-area: p; min-width: 0; width: 100%; padding: 11px 12px; gap: 6px; }
+  #play kbd { display: none; } /* 練習の「再生」と並ぶと幅が足りない */
+  #demo { padding: 6px 10px; gap: 5px; }
   .chip { padding: 5px 10px; }
 
   #drillbar { top: 8px; left: 8px; right: 8px; transform: none; flex-wrap: wrap; justify-content: center; padding: 8px 12px; gap: 8px; }
@@ -355,6 +358,7 @@ body.reviewing #stage { left: 300px; width: calc(100% - 300px); }
   <div class="t-left">
     <span class="field"><span class="practice-only">ここから</span><span class="game-only">小節</span><select id="from" title="はじめる小節"></select><span class="game-only">〜</span><select id="to" class="game-only" title="おわる小節"></select></span>
     <label class="chip game-only" title="範囲をくり返す"><input type="checkbox" id="loop"><svg class="i"><use href="#i-loop"/></svg>くり返す</label>
+    <button id="demo" class="practice-only" title="譜面の音を鳴らして聞く（ヘッドホンで）。聞いている間は、弾いた音を聞き取らない"></button>
     <span class="hint practice-only">譜面の小節を押しても選べます</span>
   </div>
   <button id="play" class="primary"></button>
@@ -418,7 +422,7 @@ body.reviewing #stage { left: 300px; width: calc(100% - 300px); }
     </section>
     <section class="keys-sec">
       <h3>キーボード</h3>
-      <div class="keys"><kbd>Space</kbd><span>はじめる・とめる／振り返りの再生</span><kbd>Esc</kbd><span>いま開いている画面を閉じる</span><kbd>← →</kbd><span>振り返りで前・次の苦手な箇所</span></div>
+      <div class="keys"><kbd>Space</kbd><span>はじめる・とめる／再生を止める／振り返りの再生</span><kbd>Esc</kbd><span>いま開いている画面を閉じる</span><kbd>← →</kbd><span>振り返りで前・次の苦手な箇所</span></div>
     </section>
   </div>
 </aside>

@@ -10,6 +10,7 @@ import { practiceReview, gameReview, groupAt, describe, spots } from './review.j
 import { songToCtx } from './clock.js';
 import { FlexClock } from './flex.js';
 import { listSongs, getSong, saveSong, touchSong, removeSong, clearSongs } from './library.js';
+import { DemoPlayer } from './demo.js';
 import demoBytes from '../songs/romance.gp';
 
 const $ = id => document.getElementById(id);
@@ -29,6 +30,7 @@ const S = {
   mode: store.get('mode', 'practice'), // 'practice'（譜面がついてくる）| 'game'（音ゲー）
   playing: false, song: 0, lastNow: 0, history: [],
   follower: null, listening: false, practiceStart: 0, doneAt: null,
+  demo: null, // 練習モードの「再生」（demo.js）
   recorder: null,
   take: null, // 振り返り用に、いま弾いている回の音をためる
   lastReview: null, // 直前の回の振り返り { data, take, diag（調査用）, song, trackIndex, title }
@@ -74,6 +76,7 @@ function setTrack(index) {
   $('to').value = String(S.chart.bars.length - 1);
   stop();
   stopPractice(false);
+  stopDemo();
   S.follower = new Follower(S.chart);
   S.song = -1;
   S.lastReview = null;
@@ -168,10 +171,15 @@ function selectedRange() {
 
 // ---- 音 ----
 async function ensureAudio() {
+  await ensureOutput();
+  if (!S.mic) await startMic();
+}
+
+/** 音を出すだけ（マイクは使わない） */
+async function ensureOutput() {
   if (!S.audio) S.audio = new AudioContext({ latencyHint: 'interactive' });
   // 音の出力先がうまく開けないと resume が返ってこないことがある。黙って止まらないように待つ時間を決める
   if (S.audio.state !== 'running') await Promise.race([S.audio.resume(), new Promise((_, ng) => setTimeout(() => ng(new Error('resume')), 4000))]);
-  if (!S.mic) await startMic();
 }
 
 async function startMic() {
@@ -331,6 +339,8 @@ function tick() {
   }
   if (S.reviewing) {
     drawReview();
+  } else if (S.mode === 'practice' && S.demo?.playing) {
+    drawDemo();
   } else if (S.mode === 'practice') {
     const f = S.follower;
     if (S.listening && S.doneAt !== null && S.audio.currentTime > S.doneAt) stopPractice(true);
@@ -531,6 +541,7 @@ function finishCalibration() {
 // ---- 練習モード（譜面が演奏についてくる）----
 function setMode(mode) {
   closeReview();
+  stopDemo();
   if (S.playing) stop();
   if (S.listening) stopPractice(false);
   S.mode = mode;
@@ -545,6 +556,7 @@ function setMode(mode) {
 
 function togglePlay() {
   if (S.reviewing) return S.hub.playing ? reviewPause() : reviewPlay(S.hub.pos);
+  if (S.mode === 'practice' && S.demo?.playing) return stopDemo();
   if (S.mode === 'practice') return S.listening ? stopPractice(true) : startPractice();
   return S.playing ? stop() : start();
 }
@@ -556,6 +568,7 @@ async function startPractice(fromBar = Number($('from').value)) {
     micError(e);
     return;
   }
+  stopDemo();
   const first = Math.max(0, S.chart.groups.findIndex(g => g.bar >= fromBar));
   sheet.follow();
   S.follower = new Follower(S.chart);
@@ -587,6 +600,46 @@ function stopPractice(showResult) {
     S.lastReview = { ...reviewInfo(take, data), diag: practiceDiag(S.follower, S.diagMoves, st, data) };
   }
   if (showResult) { S.hub = null; S.drill = null; S.beforeDrill = null; updateBackButton(); showPracticeResult(st); }
+}
+
+// ---- 再生（練習モード。譜面の音を鳴らす。弾いた音は聞き取らない）----
+async function startDemo(fromBar = Number($('from').value)) {
+  try { await ensureOutput(); } catch (e) { micError(e); return; }
+  if (S.listening) stopPractice(false);
+  $('presult').hidden = true;
+  S.demo ??= new DemoPlayer(S.audio);
+  S.demo.start(S.chart, S.chart.bars[fromBar].t);
+  sheet.follow();
+  setDemoLabel();
+}
+
+function stopDemo() {
+  if (!S.demo?.playing) return;
+  S.demo.stop();
+  setDemoLabel();
+  updatePracticeStats();
+}
+
+/** 再生している位置を譜面に出す（鳴っている和音を、弾くときの「次の和音」と同じ色で） */
+function drawDemo() {
+  const d = S.demo;
+  d.pump();
+  if (d.done) { stopDemo(); return; }
+  const t = d.pos, gs = S.chart.groups;
+  let cur = gs.findIndex(g => g.t >= d.song0 - 1e-6);
+  while (cur + 1 < gs.length && gs[cur + 1].t <= t + 0.02) cur++;
+  sheet.draw(S.chart, { pos: cur - 1, conf: 1, listening: true, demo: true, played: null, stumbleBars: null });
+  const bar = S.chart.bars[gs[Math.max(0, cur)].bar];
+  const acc = `${bar.number}小節`;
+  if ($('acc').textContent !== acc) { $('acc').textContent = acc; $('count').textContent = '再生中'; $('timing').textContent = ''; }
+  S.demoProgress = (cur + 1) / gs.length;
+}
+
+function setDemoLabel() {
+  const on = !!S.demo?.playing;
+  // スマホでも文字を出す。アイコンだけだと、隣の「弾きはじめる」と見分けにくい
+  $('demo').innerHTML = `<svg class="i fill"><use href="${on ? '#i-stop' : '#i-play'}"/></svg>${on ? '停止' : '再生'}`;
+  $('demo').classList.toggle('on', on);
 }
 
 function updatePracticeStats() {
@@ -702,6 +755,7 @@ function openReview() {
     h.buffer.copyToChannel(samples, 0);
   }
   if (S.playing) stop();
+  stopDemo();
   S.reviewing = true;
   $('result').hidden = true;
   $('presult').hidden = true;
@@ -891,6 +945,7 @@ function updateChrome() {
   micBars.forEach((b, k) => b.classList.toggle('on', lv > 0.04 + k * 0.16));
   let p = 0;
   if (S.reviewing) p = S.hub?.buffer ? reviewPos() / S.hub.buffer.duration : 0;
+  else if (S.mode === 'practice' && S.demo?.playing) p = S.demoProgress ?? 0;
   else if (S.mode === 'practice') p = S.follower && S.follower.pos >= 0 ? (S.follower.pos + 1) / S.chart.groups.length : 0;
   else if (S.range && S.playing) p = (S.song - S.range.from) / (S.range.to - S.range.from);
   $('progress').style.setProperty('--p', Math.max(0, Math.min(1, p)).toFixed(4));
@@ -956,6 +1011,7 @@ $('lib-list').addEventListener('click', async e => {
   }
 });
 $('play').addEventListener('click', togglePlay);
+$('demo').addEventListener('click', () => (S.demo?.playing ? stopDemo() : startDemo()));
 $('speed').addEventListener('input', syncSpeedLabel);
 $('zoom').addEventListener('input', e => { view.pps = Number(e.target.value); store.set('zoom', view.pps); syncRange(e.target); });
 $('settings-btn').addEventListener('click', openSettings);
@@ -1051,6 +1107,7 @@ $('stage').addEventListener('click', e => {
   if (bar === null) return;
   // 弾いている途中なら、その小節から追い直す。止まっていれば開始位置にする
   $('from').value = String(bar);
+  if (S.demo?.playing) { startDemo(bar); return; }
   if (S.listening) { S.follower.start(Math.max(0, S.chart.groups.findIndex(g => g.bar >= bar))); updatePracticeStats(); }
   else { S.follower.start(Math.max(0, S.chart.groups.findIndex(g => g.bar >= bar))); S.finalPlayed = null; S.lastStumbles = null; }
 });
@@ -1092,6 +1149,7 @@ $('strict').value = store.get('strict', 'normal');
 $('follow').checked = store.get('follow', true);
 $('lat').textContent = `${Math.round(S.latency * 1000)}ms`;
 syncSpeedLabel();
+setDemoLabel();
 refreshDevices(); // 前に許可をもらっていれば、マイクの名前の一覧が取れる
 updateMicInfo();
 // 前に開いていた曲をライブラリから開く。なければ（消した・保存できなかった）デモ
@@ -1102,4 +1160,4 @@ setMode(S.mode);
 requestAnimationFrame(tick);
 
 // テスト用の口
-window.__flubato = { S, sheet, start, stop, startPractice, stopPractice, setMode };
+window.__flubato = { S, sheet, start, stop, startPractice, stopPractice, startDemo, stopDemo, setMode };
