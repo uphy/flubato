@@ -937,7 +937,8 @@ window.addEventListener('keydown', e => {
     e.preventDefault(); reviewStep(e.key === 'ArrowLeft' ? -1 : 1);
   }
 });
-window.addEventListener('resize', () => { view.resize(); sheet.resize(); });
+// 窓の大きさだけでなく、上の帯の折り返し（スマホで曲名が変わったとき）で譜面の高さが変わっても描き直す
+new ResizeObserver(() => { view.resize(); sheet.resize(); }).observe($('stage'));
 window.addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('drag'); });
 window.addEventListener('dragleave', () => document.body.classList.remove('drag'));
 window.addEventListener('drop', e => {
