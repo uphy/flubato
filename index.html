@@ -132,6 +132,7 @@ body.live #play kbd { color: var(--dim); border-color: var(--line-strong); }
 .set { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 0; }
 .set b { display: block; font-weight: 600; }
 .set p { margin: 2px 0 0; color: var(--dim); font-size: 12px; }
+#build-info a { color: var(--accent); }
 .set select { min-width: 0; max-width: 100%; }
 .set.stack { flex-direction: column; align-items: stretch; gap: 8px; }
 .levelbar { height: 6px; border-radius: 3px; background: var(--raised-hi); overflow: hidden; }
@@ -466,6 +467,13 @@ body.reviewing #stage { left: 300px; width: calc(100% - 300px); }
       <div class="set">
         <div><b>すべて消す</b><p id="data-info">保存した曲と、設定（マイクの遅れの測った値など）を消して、はじめて開いたときの状態に戻します。</p></div>
         <button id="clear-data" class="danger">消す</button>
+      </div>
+    </section>
+    <section>
+      <h3>このアプリの版</h3>
+      <div class="set">
+        <div><b id="build-info">開発用（ビルドしていない版）</b><p id="build-time"></p><p id="update-state">開いたときと、ほかのアプリから戻ってきたときに新しい版を確かめ、あれば読み込み直します。</p></div>
+        <button id="check-update">確かめる</button>
       </div>
     </section>
     <section class="keys-sec">

@@ -12,6 +12,7 @@ import { FlexClock } from './flex.js';
 import { listSongs, getSong, saveSong, touchSong, removeSong, clearSongs } from './library.js';
 import { DemoPlayer } from './demo.js';
 import { Tuner } from './tuner.js';
+import { BUILD, latestBuild, shouldReload, reloadTo, describeBuild } from './update.js';
 import demoBytes from '../songs/romance.gp';
 
 const $ = id => document.getElementById(id);
@@ -1212,6 +1213,47 @@ document.addEventListener('visibilitychange', keepAwake);
 window.addEventListener('pointerdown', keepAwake);
 keepAwake();
 
+// ---- 新しい版に上げる ----
+// 開いたとき・ほかのアプリから戻ってきたとき・開きっぱなしなら30分ごとに、公開中の版を確かめ、違っていれば読み込み直す。
+// 弾いている・再生している・振り返りや結果を見ているあいだは読み込み直さず、手が空いたら読み込み直す
+let pendingUpdate = null; // 読み込み直すのを待っている新しい版
+const busy = () => S.playing || S.listening || S.demo?.playing || S.reviewing || S.calibrating || S.recorder
+  || !$('tuner').hidden || !$('result').hidden || !$('presult').hidden;
+function showBuild(latest) {
+  if (!BUILD) return;
+  const b = describeBuild(BUILD);
+  const commit = BUILD.sha && !BUILD.dirty
+    ? `<a href="https://github.com/uphy/flubato/commit/${BUILD.sha}" target="_blank" rel="noopener">${b.commit}</a>` : b.commit;
+  $('build-info').innerHTML = commit;
+  $('build-time').textContent = `${b.when} にビルド`;
+  if (latest === undefined) return;
+  if (!latest) $('update-state').textContent = '公開中の版を確かめられませんでした（電波がないときなど）';
+  else if (latest.id === BUILD.id) $('update-state').textContent = '最新の版です';
+  else { const n = describeBuild(latest); $('update-state').textContent = `新しい版 ${n.commit}（${n.when}）があります`; }
+}
+async function checkUpdate(manual = false) {
+  if (!BUILD) return;
+  const latest = await latestBuild();
+  showBuild(latest);
+  if (!latest || latest.id === BUILD.id) return;
+  // 自分で「確かめる」を押したときは、前に同じ版で読み込み直していても、もう一度読み込み直す
+  if (!manual && !shouldReload(latest)) return;
+  pendingUpdate = latest;
+  applyUpdate();
+}
+function applyUpdate() {
+  if (!pendingUpdate || busy()) return;
+  const latest = pendingUpdate; pendingUpdate = null;
+  toast('新しい版を読み込んでいます');
+  reloadTo(latest);
+}
+showBuild();
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkUpdate(); });
+setInterval(applyUpdate, 2000);
+// 開きっぱなしにしている（PC のタブなど）ときも、ときどき確かめる
+setInterval(() => { if (document.visibilityState === 'visible') checkUpdate(); }, 30 * 60 * 1000);
+$('check-update').addEventListener('click', () => { $('update-state').textContent = '確かめています…'; checkUpdate(true); });
+
 view.pps = store.get('zoom', 240); $('zoom').value = String(view.pps); syncRange($('zoom'));
 sheet.scale = store.get('sheetScale', 1); $('sheet-scale').value = String(Math.round(sheet.scale * 100)); syncSheetScale();
 $('strict').value = store.get('strict', 'normal');
@@ -1227,6 +1269,7 @@ if (lastSong) await openSaved(lastSong).catch(e => { console.error(e); openDemo(
 else openDemo();
 setMode(S.mode);
 requestAnimationFrame(tick);
+checkUpdate();
 
 // テスト用の口
 window.__flubato = { S, sheet, start, stop, startPractice, stopPractice, startDemo, stopDemo, setMode };
