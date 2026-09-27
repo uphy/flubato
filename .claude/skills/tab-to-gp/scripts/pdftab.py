@@ -25,6 +25,9 @@ ap.add_argument("pdf")
 ap.add_argument("outdir")
 ap.add_argument("--dpi", type=int, default=300)
 ap.add_argument("--tuning", default="E4 B3 G3 D3 A2 E2", help="1弦から順に（ドロップ D なら E4 B3 G3 D3 A2 D2）")
+ap.add_argument("--pages", help="対象のページ（例 8-13）。曲集から1曲だけ取り出すときに使う")
+ap.add_argument("--no-text", action="store_true",
+                help="PDF の文字を使わない。スキャンに OCR をかけた PDF は数字が化けているので、小節ごとの画像だけを作る")
 args = ap.parse_args()
 pdf, outdir, dpi = args.pdf, args.outdir, args.dpi
 k = dpi / 72  # pt → px
@@ -85,8 +88,19 @@ def staffs(im):
 
 
 def barlines(im, top, bot):
-    """top〜bot（px）を縦に貫く線の x（px）"""
+    """top〜bot（px）を縦に貫く線の x（px）。
+
+    全弦に数字が並ぶ和音（とアルペジオの波線）も TAB を縦に埋める。小節線は1本目と6本目の線でちょうど止まるが、
+    数字は端の線の外へ半分はみ出す。はみ出しが短い（遠くまでは続かない）ものを数字の列として除く。
+    五線から続く段の左端の線は上へ長く伸びるので残る
+    """
     px = im.load()
+    h = im.size[1]
+    sp = (bot - top) / 5
+
+    def dark(x, y):
+        return 0 <= y < h and px[x, y] < 128
+
     xs = [x for x in range(im.size[0])
           if sum(1 for y in range(int(top), int(bot) + 1) if px[x, y] < 128) >= (bot - top) * 0.95]
     out = []
@@ -95,14 +109,24 @@ def barlines(im, top, bot):
             out[-1].append(x)
         else:
             out.append([x])
-    return [(g[0], g[-1]) for g in out]
+
+    def digits(g):
+        near = lambda y: any(dark(x, int(y)) for x in g)
+        return (near(top - 0.35 * sp) and not near(top - 1.5 * sp)) or \
+               (near(bot + 0.35 * sp) and not near(bot + 1.5 * sp))
+
+    return [(g[0], g[-1]) for g in out if not digits(g)]
 
 
 # 7 / (7) 括弧 / [12] 角括弧（自然ハーモニクス） / x（デッドノート）。"[12]([12])" のように1語につながることもある
 NOTE = re.compile(r"\(?\[?(\d{1,2}|x|X)\]?\)?")
 listing = []
 mnum = 0
-for pn, words in enumerate(pages, 1):
+first, last = 1, len(pages)
+if args.pages:
+    first, last = (int(v) for v in (args.pages.split("-") + [args.pages])[:2])
+for pn in range(first, last + 1):
+    words = [] if args.no_text else pages[pn - 1]
     im = page_image(pn)
     groups = staffs(im)
     tabs = [g for g in groups if len(g) == 6]
