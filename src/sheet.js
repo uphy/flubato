@@ -27,6 +27,7 @@ export class SheetView {
     this.vel = 0; // 指で弾いたあとの惰性（段/フレーム）
     this.target = 0; this.maxScroll = 0; this.rowH = 0;
     this.hits = []; // クリック判定用 { x0, x1, y0, y1, bar }
+    this.scale = 1; // 利用者が選んだ大きさ（設定の「譜面の大きさ」）
     this.resize();
   }
 
@@ -40,13 +41,19 @@ export class SheetView {
     this._rowsFor = null;
   }
 
+  /** 大きさの倍率。スマホの縦持ちのような狭い画面では、1段に小節が2つ入るよう小さめから始める */
+  get k() { return (this.w < 600 ? 0.7 : 1) * this.scale; }
+
   /** 小節を段に割り付ける（幅は中の和音の数で決める） */
   _layout(chart) {
-    if (this._rowsFor === chart && this._w === this.w) return this.rows;
+    const k = this.k;
+    if (this._rowsFor === chart && this._w === this.w && this._k === k) return this.rows;
+    // 狭い画面では、和音どうしの間隔をさらに詰める（数字の大きさのわりに、広い画面の間隔は余白が多い）
+    const gx = k * (this.w < 600 ? 0.7 : 1);
     // 横に広い画面でも1段が長くなりすぎないよう、幅に上限を付けて真ん中に置く。左端は TAB の記号のぶん空ける
-    const span = Math.min(this.w - 48, 1560);
-    const left = (this.w - span) / 2 + CLEF_W, right = (this.w + span) / 2;
-    this.rowLeft = left - CLEF_W;
+    const span = Math.min(this.w - (this.w < 600 ? 16 : 48), 1560);
+    const left = (this.w - span) / 2 + CLEF_W * k, right = (this.w + span) / 2;
+    this.rowLeft = left - CLEF_W * k;
     // 小節の中の横位置: 楽譜の組版と同じく、休符も含めて拍ごとに場所を取り、長い音ほど少し広く（時間の平方根）。
     // 時間に比例させると、休符のあとに短い音が続く小節で数字が右端に詰まって重なる
     this.barPos = new Map();
@@ -63,7 +70,7 @@ export class SheetView {
     const rows = [];
     let row = [], x = left;
     chart.bars.forEach((bar, i) => {
-      const w = Math.max(120, (perBar.get(i) || 1) * MIN_GROUP_PX + 28);
+      const w = Math.max(120 * gx, ((perBar.get(i) || 1) * MIN_GROUP_PX + 28) * gx);
       if (row.length && x + w > right) {
         rows.push(row); row = []; x = left;
       }
@@ -90,7 +97,7 @@ export class SheetView {
       lastOn.set(n.string, n.id);
     }
     this.rows = rows;
-    this._rowsFor = chart; this._w = this.w;
+    this._rowsFor = chart; this._w = this.w; this._k = k;
     return rows;
   }
 
@@ -107,11 +114,13 @@ export class SheetView {
     const rv = state.review;
     const areaH = H - (rv ? 64 : 0); // 振り返りのときは下に操作の帯が重なる
     const n1 = chart.stringCount - 1;
-    const stringGap = Math.min(24, Math.max(14, areaH / 24));
+    const k = this.k;
+    const stringGap = Math.min(24, Math.max(14, areaH / 24)) * k;
     const staffH = stringGap * n1;
-    const rowH = staffH + RHYTHM_H + stringGap * 2.6 + 24; // 下にリズム（符尾・連桁）の段と、段のあいだ
+    const rhythmH = RHYTHM_H * k;
+    const rowH = staffH + rhythmH + stringGap * 2.6 + 24 * k; // 下にリズム（符尾・連桁）の段と、段のあいだ
     const padTop = stringGap * 1.6 + 8;
-    const fs = Math.round(stringGap * 0.8);
+    const fs = Math.max(9, Math.round(stringGap * 0.8));
     const font = `600 ${fs}px ${FONT}`;
 
     const next = rv ? rv.cursor ?? rv.selected ?? -1 : Math.min(chart.groups.length - 1, state.pos + 1);
@@ -170,14 +179,14 @@ export class SheetView {
         const stumble = state.stumbleBars?.has(b.i);
         if (isCur || stumble) {
           g.fillStyle = stumble ? C.badSoft : state.listening ? C.accentSoft : C.hover;
-          roundRect(g, b.x + 1, top - stringGap * 1.2, b.w - 2, staffH + stringGap * 1.2 + RHYTHM_H + 8, 8);
+          roundRect(g, b.x + 1, top - stringGap * 1.2, b.w - 2, staffH + stringGap * 1.2 + rhythmH + 8 * k, 8 * k);
           g.fill();
         }
-        this.hits.push({ x0: b.x, x1: b.x + b.w, y0: top - stringGap * 1.4, y1: bot + RHYTHM_H + 8, bar: b.i });
+        this.hits.push({ x0: b.x, x1: b.x + b.w, y0: top - stringGap * 1.4, y1: bot + rhythmH + 8, bar: b.i });
         g.fillStyle = stumble ? C.bad : isCur ? C.accent : C.faint;
-        g.font = `700 11px ${FONT}`;
+        g.font = `700 ${Math.max(9, Math.round(11 * k))}px ${FONT}`;
         g.textAlign = 'left';
-        g.fillText(String(chart.bars[b.i].number), b.x + 5, top - stringGap * 0.75);
+        g.fillText(String(chart.bars[b.i].number), b.x + 5 * k, top - stringGap * 0.75);
       }
       // 弦（数字のところは切る）
       g.strokeStyle = C.string; g.lineWidth = 1;
@@ -201,12 +210,15 @@ export class SheetView {
       g.font = `800 ${Math.round(Math.min(19, staffH / 4.6))}px ${FONT}`;
       g.textAlign = 'center';
       const ch = Math.round(Math.min(19, staffH / 4.6));
-      ['T', 'A', 'B'].forEach((c, k) => {
-        const y = top + staffH / 2 + (k - 1) * ch * 1.12;
-        g.fillStyle = C.bg; g.fillRect(x0 + CLEF_W / 2 - ch * 0.5, y - ch * 0.5, ch, ch);
-        g.fillStyle = C.clef; g.fillText(c, x0 + CLEF_W / 2, y + 0.5);
+      ['T', 'A', 'B'].forEach((c, j) => {
+        const y = top + staffH / 2 + (j - 1) * ch * 1.12;
+        g.fillStyle = C.bg; g.fillRect(x0 + CLEF_W * k / 2 - ch * 0.5, y - ch * 0.5, ch, ch);
+        g.fillStyle = C.clef; g.fillText(c, x0 + CLEF_W * k / 2, y + 0.5);
       });
-      for (const b of row) drawRhythm(g, chart, chart.rhythm.filter(r => r.bar === b.i), r => this.xAt(chart, b.i, r.t), bot + fs * 0.3, C.rhythm);
+      // リズムは rhythm.js の寸法のまま描いて、段の下端を原点に k 倍する
+      g.save(); g.translate(0, bot + fs * 0.3); g.scale(k, k);
+      for (const b of row) drawRhythm(g, chart, chart.rhythm.filter(r => r.bar === b.i), r => this.xAt(chart, b.i, r.t) / k, 0, C.rhythm);
+      g.restore();
     });
 
     // 音符
@@ -215,7 +227,7 @@ export class SheetView {
       const played = state.played?.[gi];
       const isNext = gi === next && (state.listening || !!rv);
       const R = rv?.data.groups[gi];
-      this.groupHits.push({ x, y0: top - 8, y1: top + staffH + 14 + RHYTHM_H, g: gi });
+      this.groupHits.push({ x, y0: top - 8, y1: top + staffH + 14 + rhythmH, g: gi });
       if (isNext) {
         g.save();
         g.shadowColor = 'rgba(255,210,74,0.45)'; g.shadowBlur = 16;
@@ -269,7 +281,7 @@ export class SheetView {
       if (tags.length) {
         const text = tags.join('');
         g.font = `700 11px ${FONT}`;
-        const tw = g.measureText(text).width + 8, ty = top + staffH + RHYTHM_H + 12;
+        const tw = g.measureText(text).width + 8, ty = top + staffH + rhythmH + 12;
         g.fillStyle = C.badSoft; roundRect(g, x - tw / 2, ty - 8, tw, 16, 4); g.fill();
         g.fillStyle = C.bad; g.fillText(text, x, ty + 0.5);
       }
@@ -315,7 +327,7 @@ export class SheetView {
       if (k < 0) k = p.ts.length - 1;
       f = p.fr[k];
     }
-    return b.x + 18 + f * (b.w - 30);
+    return b.x + 18 * this.k + f * (b.w - 30 * this.k);
   }
 
   /** 画面上の点がどの和音か（なければ null） */

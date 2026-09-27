@@ -917,6 +917,7 @@ function recordDrill() {
 // ---- UI ----
 function syncSpeedLabel() { $('speed-v').textContent = `${$('speed').value}%`; syncRange($('speed')); }
 /** スライダーのつまみの左側を塗る */
+function syncSheetScale() { $('sheet-scale-v').textContent = `${$('sheet-scale').value}%`; syncRange($('sheet-scale')); }
 function syncRange(el) { el.style.setProperty('--fill', `${((el.value - el.min) / (el.max - el.min)) * 100}%`); }
 
 /** はじめる・とめるボタン。モードと、いま弾いているかで変える */
@@ -1060,6 +1061,7 @@ $('play').addEventListener('click', togglePlay);
 $('demo').addEventListener('click', () => (S.demo?.playing ? stopDemo() : startDemo()));
 $('speed').addEventListener('input', syncSpeedLabel);
 $('zoom').addEventListener('input', e => { view.pps = Number(e.target.value); store.set('zoom', view.pps); syncRange(e.target); });
+$('sheet-scale').addEventListener('input', e => { sheet.scale = Number(e.target.value) / 100; store.set('sheetScale', sheet.scale); syncSheetScale(); });
 $('settings-btn').addEventListener('click', openSettings);
 $('tuner-btn').addEventListener('click', openTuner);
 $('tn-close').addEventListener('click', closeTuner);
@@ -1195,6 +1197,7 @@ window.addEventListener('drop', e => {
 });
 
 view.pps = store.get('zoom', 240); $('zoom').value = String(view.pps); syncRange($('zoom'));
+sheet.scale = store.get('sheetScale', 1); $('sheet-scale').value = String(Math.round(sheet.scale * 100)); syncSheetScale();
 $('strict').value = store.get('strict', 'normal');
 $('follow').checked = store.get('follow', true);
 $('lat').textContent = `${Math.round(S.latency * 1000)}ms`;
