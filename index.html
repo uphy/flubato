@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Flubato</title>
+<!-- ホーム画面から開くアプリ（PWA）にする。manifest・アイコン・sw.js は public/ にあり、npm run build で dist/ に並ぶ -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#0e1016">
+<meta name="apple-mobile-web-app-title" content="Flubato">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <style>
 :root {
   --bg: #0e1016; --surface: #13161e; --panel: #181c26; --raised: #222735; --raised-hi: #2b3143;
@@ -427,5 +436,9 @@ body.reviewing #stage { left: 300px; width: calc(100% - 300px); }
   </div>
 </aside>
 <script type="module" src="./dist/app.js"></script>
+<script>
+// file:// で開いたときや、sw.js を置いていない開発用のルート（npm start の /）では登録に失敗するが、アプリはそのまま動く
+if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
 </body>
 </html>
