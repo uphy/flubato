@@ -75,15 +75,18 @@ def staffs(im):
         else:
             lines.append([y])
     ys = [sum(g) / len(g) for g in lines]
-    groups, cur = [], [ys[0]] if ys else []
-    for y in ys[1:]:
-        if len(cur) >= 2 and abs((y - cur[-1]) - (cur[1] - cur[0])) > 3 or y - cur[-1] > 12 * k:
-            groups.append(cur)
-            cur = [y]
+    # let ring・P.M. の長い破線や連桁も横線に見えるので、等間隔に並ぶ6本（なければ5本）を窓をずらして探す
+    groups, i = [], 0
+    while i < len(ys):
+        for n in (6, 5):
+            win = ys[i:i + n]
+            gaps = [b - a for a, b in zip(win, win[1:])]
+            if len(win) == n and gaps[0] < 12 * k and max(gaps) - min(gaps) <= 3:
+                groups.append(win)
+                i += n
+                break
         else:
-            cur.append(y)
-    if cur:
-        groups.append(cur)
+            i += 1
     return groups
 
 
@@ -129,7 +132,11 @@ for pn in range(first, last + 1):
     words = [] if args.no_text else pages[pn - 1]
     im = page_image(pn)
     groups = staffs(im)
+    # 五線の下に長い連桁があると、五線 + 1本が6本の組に見える。TAB は五線より線の間隔が広いので、間隔の揃わない組を除く
     tabs = [g for g in groups if len(g) == 6]
+    if tabs:
+        gap = sorted(g[-1] - g[0] for g in tabs)[len(tabs) // 2]
+        tabs = [g for g in tabs if abs((g[-1] - g[0]) - gap) < gap * 0.15]
     fives = [g for g in groups if len(g) == 5]
     for sn, tab in enumerate(tabs, 1):
         sp = (tab[-1] - tab[0]) / 5 / k  # 線の間隔（pt）
