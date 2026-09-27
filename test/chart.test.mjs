@@ -20,3 +20,11 @@ test('繰り返し・テンポ変化・タイ・カポを反映する', () => {
   assert.deepEqual(first.map(n => [n.string, n.fret, n.midi]).sort(), [[4, 2, 54], [6, 0, 42]].sort());
   assert.equal(c.notes.filter(n => n.bar === 4).length, 1); // タイの先は数えない
 });
+
+test('別のボイスで刻んでいても、のばしている音は1度だけ入る', () => {
+  const eighths = f => Array(8).fill(`${f}.1.8`).join(' ');
+  const c = buildChart(scoreFromAlphaTex(`\\tempo 120 . \\track "G" \\staff {tabs} \\voice 0.6.1 | 3.6.1 \\voice ${eighths(0)} | ${eighths(1)}`), 0);
+  assert.deepEqual(c.notes.filter(n => n.string === 6).map(n => [n.t, n.fret]), [[0, 0], [2, 3]]);
+  assert.equal(c.notes.length, 18);
+  assert.ok(c.notes.every((n, i) => i === 0 || c.notes[i - 1].t <= n.t), '時刻の順に並ぶ');
+});

@@ -83,10 +83,14 @@ export function buildChart(score, trackIndex) {
       const tick = mb.start + k * beatTicks;
       if (tick < mb.end) beats.push({ t: tickToSec(tick), first: k === 0 });
     }
+    // highlightedBeats には、その刻みで鳴っている拍がすべて入る。別のボイスで細かく刻んでいると、
+    // のばしている拍が刻みごとに出てくるので、1回の通り（masterBar の lookup）で1度だけ拾う
+    const taken = new Set();
     for (let bl = mb.firstBeat; bl; bl = bl.nextBeat) {
       for (const item of bl.highlightedBeats) {
         const beat = item.beat;
-        if (beat.voice.bar.staff.track.index !== trackIndex) continue;
+        if (beat.voice.bar.staff.track.index !== trackIndex || taken.has(beat)) continue;
+        taken.add(beat);
         rawRhythm.push({
           bar: bars.length - 1, tick: item.playbackStart, t: tickToSec(mb.start + item.playbackStart),
           duration: beat.duration, dots: beat.dots, tuplet: beat.hasTuplet ? beat.tupletNumerator : 0,
