@@ -1196,6 +1196,22 @@ window.addEventListener('drop', e => {
   const f = e.dataTransfer.files[0]; if (f) openFile(f);
 });
 
+// 開いているあいだは画面を暗くしない（両手で弾いていると、画面に触らない時間が長い）
+// 別のアプリに切り替えると外れるので、戻ってきたら取り直す。触る前だと断る端末もあるので、触ったときにも頼み直す
+let wakeLock = null; // 取れている WakeLockSentinel か、頼んでいる途中なら 'pending'
+async function keepAwake() {
+  if (!('wakeLock' in navigator) || wakeLock || document.visibilityState !== 'visible') return;
+  wakeLock = 'pending';
+  try {
+    const lock = await navigator.wakeLock.request('screen');
+    lock.addEventListener('release', () => { wakeLock = null; });
+    wakeLock = lock;
+  } catch { wakeLock = null; /* 省電力モードなどで断られたら、ふつうに暗くなる */ }
+}
+document.addEventListener('visibilitychange', keepAwake);
+window.addEventListener('pointerdown', keepAwake);
+keepAwake();
+
 view.pps = store.get('zoom', 240); $('zoom').value = String(view.pps); syncRange($('zoom'));
 sheet.scale = store.get('sheetScale', 1); $('sheet-scale').value = String(Math.round(sheet.scale * 100)); syncSheetScale();
 $('strict').value = store.get('strict', 'normal');
