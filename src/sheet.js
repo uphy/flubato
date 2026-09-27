@@ -22,6 +22,10 @@ export class SheetView {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.scroll = 0; // 表示中の先頭の段（なめらかに動かす）
+    // 手で動かしたときの、自動で合わせる先の段。弾いている位置が別の段に移るまでは、手で動かした位置のままにする
+    this.manual = null;
+    this.vel = 0; // 指で弾いたあとの惰性（段/フレーム）
+    this.target = 0; this.maxScroll = 0; this.rowH = 0;
     this.hits = []; // クリック判定用 { x0, x1, y0, y1, bar }
     this.resize();
   }
@@ -115,8 +119,18 @@ export class SheetView {
     const curRow = this.rowOfBar.get(curBar) ?? 0;
     // いまの段が上から2段目に来るように（最初は1段目）
     const target = Math.max(0, Math.min(curRow - 1, rows.length - Math.max(1, Math.floor((areaH - padTop) / rowH))));
-    this.scroll += (target - this.scroll) * 0.15;
-    if (Math.abs(target - this.scroll) < 0.01) this.scroll = target;
+    // 手で動かせるのは、最後の段が下端に来るところまで
+    this.target = target; this.rowH = rowH;
+    this.maxScroll = Math.max(target, rows.length - (areaH - padTop) / rowH);
+    if (this.manual !== null && this.manual !== target) this.follow();
+    if (this.manual === null) {
+      this.scroll += (target - this.scroll) * 0.15;
+      if (Math.abs(target - this.scroll) < 0.01) this.scroll = target;
+    } else if (this.vel) {
+      this._scrollTo(this.scroll + this.vel);
+      this.vel *= 0.94;
+      if (Math.abs(this.vel) < 0.002) this.vel = 0;
+    }
     const topOf = ri => padTop + (ri - this.scroll) * rowH;
     const visible = ri => { const t = topOf(ri); return t < areaH + stringGap && t + rowH > 0; };
 
@@ -260,8 +274,36 @@ export class SheetView {
         g.fillStyle = C.bad; g.fillText(text, x, ty + 0.5);
       }
     }
+    // 手で動かしている間は、全体のどこを見ているかを右端に出す
+    if (this.manual !== null && this.maxScroll > 0) {
+      const vis = (areaH - padTop) / rowH, total = this.maxScroll + vis;
+      const h = Math.max(24, areaH * vis / total), y = (areaH - h) * this.scroll / this.maxScroll;
+      g.fillStyle = 'rgba(255,255,255,0.22)';
+      roundRect(g, W - 6, y + 2, 3, h - 4, 1.5); g.fill();
+    }
     g.restore();
     g.textAlign = 'left';
+  }
+
+  /** 手で譜面を上下に動かす（px、正で先の段へ） */
+  scrollBy(px) {
+    if (!this.rowH) return;
+    this.manual = this.target;
+    this._scrollTo(this.scroll + px / this.rowH);
+  }
+
+  /** 指で弾いたあとの惰性（px/フレーム）。0 で止める */
+  fling(px) {
+    if (!this.rowH) return;
+    this.vel = px / this.rowH;
+  }
+
+  /** 手で動かした位置をやめて、弾いている位置に合わせ直す */
+  follow() { this.manual = null; this.vel = 0; }
+
+  _scrollTo(s) {
+    this.scroll = Math.max(0, Math.min(this.maxScroll, s));
+    if (this.scroll === 0 || this.scroll === this.maxScroll) this.vel = 0;
   }
 
   /** 小節 i の中の時刻 t の横位置 */

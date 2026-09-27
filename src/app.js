@@ -497,6 +497,7 @@ async function startPractice(fromBar = Number($('from').value)) {
     return;
   }
   const first = Math.max(0, S.chart.groups.findIndex(g => g.bar >= fromBar));
+  sheet.follow();
   S.follower = new Follower(S.chart);
   S.follower.start(first);
   S.diagMoves = [];
@@ -711,6 +712,7 @@ function selectSpot(i, play) {
   h.spot = i;
   const sp = h.spots[i];
   h.selected = sp.groups[0];
+  sheet.follow();
   renderSpots();
   $('rv-desc').textContent = sp.groups.map(g => describe(S.chart, h.data, g)).join('\n');
   if (play) listenSpot();
@@ -896,7 +898,40 @@ $('stage').addEventListener('mousemove', e => {
   const can = S.reviewing ? sheet.groupAt(x, y) !== null || sheet.barAt(x, y) !== null : S.mode === 'practice' && sheet.barAt(x, y) !== null;
   $('stage').style.cursor = can ? 'pointer' : '';
 });
+// 練習・振り返りの譜面は、ホイールや指でなぞって全体を見渡せる
+const sheetShown = () => S.reviewing || S.mode === 'practice';
+$('stage').addEventListener('wheel', e => {
+  if (!sheetShown()) return;
+  e.preventDefault();
+  sheet.fling(0);
+  sheet.scrollBy(e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? $('stage').clientHeight : 1));
+}, { passive: false });
+let drag = null, dragged = false; // なぞった直後の click は、小節を選んだことにしない
+$('stage').addEventListener('pointerdown', e => {
+  dragged = false;
+  if (!sheetShown() || e.button !== 0) return;
+  drag = { id: e.pointerId, y0: e.clientY, y: e.clientY, t: e.timeStamp, v: 0 };
+  sheet.fling(0);
+});
+$('stage').addEventListener('pointermove', e => {
+  if (!drag || e.pointerId !== drag.id) return;
+  if (!dragged && Math.abs(e.clientY - drag.y0) < 8) return;
+  if (!dragged) { dragged = true; $('stage').setPointerCapture(e.pointerId); }
+  const dy = drag.y - e.clientY, dt = Math.max(1, e.timeStamp - drag.t);
+  sheet.scrollBy(dy);
+  drag.v = 0.8 * (dy / dt) + 0.2 * drag.v; // px/ms
+  drag.y = e.clientY; drag.t = e.timeStamp;
+});
+const endDrag = e => {
+  if (!drag || e.pointerId !== drag.id) return;
+  // 指を止めてから離したときは、惰性で流さない
+  if (dragged && e.timeStamp - drag.t < 80) sheet.fling(drag.v * 16);
+  drag = null;
+};
+$('stage').addEventListener('pointerup', endDrag);
+$('stage').addEventListener('pointercancel', endDrag);
 $('stage').addEventListener('click', e => {
+  if (dragged) { dragged = false; return; }
   const r = $('stage').getBoundingClientRect();
   if (S.reviewing) {
     const g = sheet.groupAt(e.clientX - r.left, e.clientY - r.top);
@@ -959,4 +994,4 @@ setMode(S.mode);
 requestAnimationFrame(tick);
 
 // テスト用の口
-window.__flubato = { S, start, stop, startPractice, stopPractice, setMode };
+window.__flubato = { S, sheet, start, stop, startPractice, stopPractice, setMode };
