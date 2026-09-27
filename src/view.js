@@ -34,7 +34,7 @@ export class View {
     const laneTop = top + 34;
     const lanes = [];
     for (let i = 0; i < stringCount; i++) lanes.push(laneTop + gap * (i + 0.5));
-    return { top, bottom: laneTop + lanesH + RHYTHM_H + 6, lanes, gap, hitX: Math.max(120, this.w * 0.22), noteH: Math.min(36, gap * 0.74) };
+    return { top, bottom: laneTop + lanesH + RHYTHM_H + 6, lanes, gap, hitX: this.w < 600 ? 90 : Math.max(120, this.w * 0.22), noteH: Math.min(36, gap * 0.74) };
   }
 
   hitFx(note, L, now) {

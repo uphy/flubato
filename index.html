@@ -17,8 +17,8 @@
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, system-ui, "Hiragino Sans", "Noto Sans JP", sans-serif; -webkit-font-smoothing: antialiased; }
-body { display: grid; grid-template-rows: auto 1fr auto; height: 100dvh; overflow: hidden; }
+html, body { margin: 0; height: 100%; touch-action: manipulation; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, system-ui, "Hiragino Sans", "Noto Sans JP", sans-serif; -webkit-font-smoothing: antialiased; }
+body { display: grid; grid-template-rows: auto 1fr auto; grid-template-columns: minmax(0, 1fr); height: 100dvh; overflow: hidden; }
 body[data-mode=practice] .game-only, body[data-mode=game] .practice-only { display: none !important; }
 svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 svg.i.fill { fill: currentColor; stroke: none; }
@@ -182,6 +182,49 @@ body.reviewing #stage { left: 300px; width: calc(100% - 300px); }
 #rv-legend .k { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 3px; border-radius: 4px; background: var(--bad-soft); color: #ff8e9c; font-weight: 700; font-size: 11px; }
 @media (max-width: 1180px) { #rv-legend { display: none; } }
 @media (max-width: 980px) { .hud-sub, #song-meta { display: none; } .brand span { display: none; } }
+/* ---- スマホ ---- */
+@media (hover: none) and (pointer: coarse) { #play kbd, .keys-sec { display: none; } }
+@media (max-width: 720px) {
+  /* 上の帯: 1段目に曲名とボタン、2段目にモードと正解率 */
+  .top { grid-template-columns: minmax(0, 1fr) auto auto auto; grid-template-areas: "left rec mic gear" "seg hud hud hud"; gap: 8px; padding: 8px 12px; }
+  .top-left { grid-area: left; gap: 10px; }
+  .top-right { display: contents; }
+  .seg { grid-area: seg; justify-self: start; }
+  .hud { grid-area: hud; justify-self: end; margin-right: 0; }
+  #acc { font-size: 20px; }
+  #rec-ind { grid-area: rec; } #mic-btn { grid-area: mic; } #settings-btn { grid-area: gear; }
+  .song { padding-left: 10px; }
+  #title { font-size: 14px; }
+  .file { padding: 7px; }
+  .file .lbl { display: none; }
+
+  /* 下の帯: 練習は「ここから」と開始ボタンを横に、音ゲーは設定の下に開始ボタン */
+  .transport { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "l p"; gap: 10px 12px; padding: 10px 12px; }
+  body[data-mode=game] .transport { grid-template-areas: "l l" "r r" "p p"; }
+  body[data-mode=practice] .t-right { display: none; }
+  .t-left { grid-area: l; } .t-right { grid-area: r; justify-content: flex-start; gap: 8px; }
+  .transport .hint { display: none; }
+  #play { grid-area: p; min-width: 0; width: 100%; padding: 11px 16px; }
+  .chip { padding: 5px 10px; }
+
+  #drillbar { top: 8px; left: 8px; right: 8px; transform: none; flex-wrap: wrap; justify-content: center; padding: 8px 12px; gap: 8px; }
+
+  .card { padding: 20px; }
+  #r-acc { font-size: 44px; }
+  .actions { flex-wrap: wrap; }
+  .actions .spacer { display: none; }
+  .actions button { flex: 1 1 auto; justify-content: center; }
+
+  /* 振り返り: 苦手な箇所の一覧を上に、譜面を下に */
+  #rv-side { right: 0; bottom: auto; width: auto; height: 42%; padding: 12px; gap: 10px; border-right: 0; border-bottom: 1px solid var(--line); }
+  body.reviewing #stage { left: 0; width: 100%; top: 42%; height: 58%; }
+  .side-foot { grid-template-columns: 1fr 1fr; }
+  #review { gap: 6px; padding: 0 10px; }
+  #rv-time { min-width: 0; margin-left: 0; font-size: 12px; }
+  #rv-text { font-size: 13px; }
+  #rv-close { padding: 7px; }
+  #rv-close .lbl { display: none; }
+}
 </style>
 </head>
 <body>
@@ -212,7 +255,7 @@ body.reviewing #stage { left: 300px; width: calc(100% - 300px); }
       <div id="title"></div>
       <div class="song-sub"><span id="song-meta"></span><label hidden>トラック <select id="track"></select></label></div>
     </div>
-    <label class="btn ghost file" title="Guitar Pro 3〜8 / MusicXML。画面にドロップしても開けます"><svg class="i"><use href="#i-folder"/></svg>曲を開く<input id="file" type="file" accept=".gp,.gp3,.gp4,.gp5,.gpx,.gp7,.musicxml,.xml,.mxl"></label>
+    <label class="btn ghost file" title="Guitar Pro 3〜8 / MusicXML。画面にドロップしても開けます"><svg class="i"><use href="#i-folder"/></svg><span class="lbl">曲を開く</span><input id="file" type="file" accept=".gp,.gp3,.gp4,.gp5,.gpx,.gp7,.musicxml,.xml,.mxl"></label>
   </div>
   <div class="seg" role="group" aria-label="モード">
     <button data-mode-btn="practice" title="弾くと譜面がついてくる。止まっても待ってくれる">練習</button>
@@ -293,7 +336,7 @@ body.reviewing #stage { left: 300px; width: calc(100% - 300px); }
     <span id="rv-time"></span>
     <span id="rv-text"></span>
     <span id="rv-legend"><span><i class="k">止</i>止まった</span><span><i class="k">間</i>間が空いた</span><span><i class="k">急</i>急いだ</span><span><i class="k">戻</i>戻った</span><span><i class="k">飛</i>飛ばした</span><span><i class="k">／</i>聞き取れない</span><span><i class="k">┈</i>小さい</span></span>
-    <button id="rv-close"><svg class="i"><use href="#i-x"/></svg>閉じる</button>
+    <button id="rv-close"><svg class="i"><use href="#i-x"/></svg><span class="lbl">閉じる</span></button>
   </div>
 </main>
 
@@ -347,7 +390,7 @@ body.reviewing #stage { left: 300px; width: calc(100% - 300px); }
         <button id="rec"><span style="color:var(--bad)">●</span> 録音</button>
       </div>
     </section>
-    <section>
+    <section class="keys-sec">
       <h3>キーボード</h3>
       <div class="keys"><kbd>Space</kbd><span>はじめる・とめる／振り返りの再生</span><kbd>Esc</kbd><span>いま開いている画面を閉じる</span><kbd>← →</kbd><span>振り返りで前・次の苦手な箇所</span></div>
     </section>
