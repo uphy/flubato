@@ -95,7 +95,7 @@ export class SheetView {
   }
 
   /**
-   * state: { pos（最後に弾いた group）, played: Uint8Array, conf, listening, stumbleBars: Set,
+   * state: { pos（最後に弾いた group）, played: Uint8Array, conf, listening, stumbleBars: Set, demo（譜面の音を再生している）,
    *   review: { data（review.js の結果）, cursor（再生位置の group）, selected } }（振り返りのときだけ）
    */
   draw(chart, state) {
@@ -223,7 +223,7 @@ export class SheetView {
         g.restore();
       } else if (rv && gi === rv.selected) {
         g.strokeStyle = C.ink; g.lineWidth = 1.5; pill(x, top); g.stroke();
-      } else if (gi === state.pos && state.listening) {
+      } else if (gi === state.pos && state.listening && !state.demo) {
         g.strokeStyle = state.conf < 0.35 ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.7)';
         g.setLineDash(state.conf < 0.35 ? [3, 3] : []);
         g.lineWidth = 1.5; pill(x, top); g.stroke();
