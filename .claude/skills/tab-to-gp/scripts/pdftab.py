@@ -122,7 +122,7 @@ def barlines(im, top, bot):
 
 
 # 7 / (7) 括弧 / [12] 角括弧（自然ハーモニクス） / x（デッドノート）。"[12]([12])" のように1語につながることもある
-NOTE = re.compile(r"\(?\[?(\d{1,2}|x|X)\]?\)?")
+NOTE = re.compile(r"\(*\[?(\d{1,2}|x|X)\]?\)*")  # 二重括弧 ((0)) もある
 listing = []
 mnum = 0
 first, last = 1, len(pages)
@@ -130,6 +130,15 @@ if args.pages:
     first, last = (int(v) for v in (args.pages.split("-") + [args.pages])[:2])
 for pn in range(first, last + 1):
     words = [] if args.no_text else pages[pn - 1]
+    # 装飾音の小さい数字は、ページ内の数字の高さ・1桁の幅（中央値）と比べて決める。字の大きさは譜面ごとに違い、
+    # 高さの差がほとんど出ない PDF もある（Classical Gas は高さ 7.33 と 7.02、幅 4.40 と 3.90）
+    hs = sorted(w["y1"] - w["y0"] for w in words if w["t"].isdigit())
+    small_h = hs[len(hs) // 2] * 0.85 if hs else 0
+    small_w = {}  # 幅は数字ごとに違う書体がある（1 は細い）ので、同じ数字どうしで比べる
+    for d in "0123456789":
+        ws = sorted(w["x1"] - w["x0"] for w in words if w["t"] == d)
+        if ws:
+            small_w[d] = ws[len(ws) // 2] * 0.93
     im = page_image(pn)
     groups = staffs(im)
     # 五線の下に長い連桁があると、五線 + 1本が6本の組に見える。TAB は五線より線の間隔が広いので、間隔の揃わない組を除く
@@ -168,7 +177,7 @@ for pn in range(first, last + 1):
                 toks = list(NOTE.finditer(w["t"]))
                 if toks and "".join(t.group(0) for t in toks) == w["t"] and l1 - sp / 2 < base < l6 + sp / 2:
                     s = round((base - l1) / sp) + 1
-                    small = (w["y1"] - w["y0"]) < 9
+                    small = (w["y1"] - w["y0"]) < small_h or (w["x1"] - w["x0"]) < small_w.get(w["t"], 0)
                     cw = (w["x1"] - w["x0"]) / len(w["t"])
                     for t in toks:
                         notes.append(dict(x=w["x0"] + cw * (t.start() + t.end()) / 2, s=s, f=t.group(1).lower(),
