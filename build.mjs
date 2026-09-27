@@ -24,6 +24,8 @@ const js = fs.readFileSync('dist/app.js', 'utf8').replace(/<\/script/gi, '<\\/sc
 const html = fs.readFileSync('index.html', 'utf8')
   .replace('<script type="module" src="./dist/app.js"></script>', () => `<script type="module">${js}</script>`);
 fs.writeFileSync('dist/index.html', html);
+// PWA にするための manifest・アイコン・service worker を横に並べる
+fs.cpSync('public', 'dist', { recursive: true });
 // Cloudflare に上げるのは1枚で完結する index.html だけ。開発用の app.js は配信しない
 fs.writeFileSync('dist/.assetsignore', 'app.js\n');
 console.log('dist/index.html', (fs.statSync('dist/index.html').size / 1024).toFixed(0), 'KB');

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#0e1016"/>
+  <!-- 画面上部のロゴ（index.html の #i-logo）を、maskable の安全圏（中心から半径 40%）に収まる大きさで置く -->
+  <g transform="translate(88 88) scale(14)" fill="none" stroke="#ffd24a" stroke-linecap="round">
+    <path d="M3 6h18M3 10h18M3 14h18M3 18h18" stroke-width="1.2" opacity=".45"/>
+    <g fill="#ffd24a" stroke="none">
+      <rect x="5" y="4" width="5" height="4" rx="1.2"/>
+      <rect x="11" y="12" width="5" height="4" rx="1.2"/>
+      <rect x="16" y="16" width="5" height="4" rx="1.2" opacity=".6"/>
+    </g>
+  </g>
+</svg>

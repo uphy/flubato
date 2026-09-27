@@ -13,9 +13,12 @@ node tools/smoke.mjs out.png   # ヘッドレス Chrome に合成音をマイク
 node tools/eval.mjs 調査用.wav [--verbose] [--opts JSON]  # アプリの「調査用に保存」を、同じ曲・設定で動かし直してアプリの判断と比べる
 node tools/eval.mjs 曲.gp 録音.wav [--verbose]   # ふつうの録音（「● 録音」など）を追従器に通す
 node tools/tex2gp.mjs in.tex [out.gp]           # alphaTex → Guitar Pro
+node tools/icons.mjs                            # public/icon.svg から PNG のアイコンを作り直す（rsvg-convert を使う）
 ```
 
 `tools/smoke.mjs` と `tools/tex2gp.mjs` は Chrome を使う。Mac では `CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"` を付ける。
+
+ホーム画面に追加して開くアプリ（PWA）にしてある。manifest・アイコン・`sw.js` は `public/` に置き、`npm run build` が `dist/` にコピーする。`sw.js` は毎回ネットから取り、取れないときだけ手元の控えを出すので、公開した新しい版は次に開いたときに届き、電波がなくても開ける。
 
 マイクは https か localhost でしか使えない。`dist/index.html` を file:// で開いても使える。
 
