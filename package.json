@@ -1,0 +1,21 @@
+{
+  "name": "flubato",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Guitar Pro のタブ譜を読み込み、実物のギターをマイクで聞き取って練習するブラウザアプリ",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "build": "node build.mjs",
+    "start": "node tools/serve.mjs 8770",
+    "deploy": "npm run build && wrangler deploy"
+  },
+  "dependencies": {
+    "@coderline/alphatab": "^1.8.4"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "wrangler": "^4.141.0"
+  }
+}

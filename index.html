@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flubato</title>
+<style>
+:root {
+  --bg: #0e1016; --surface: #13161e; --panel: #181c26; --raised: #222735; --raised-hi: #2b3143;
+  --line: rgba(255,255,255,.07); --line-strong: rgba(255,255,255,.13);
+  --text: #eceef3; --dim: #969cab; --faint: #636a7a;
+  --accent: #ffd24a; --accent-ink: #1c1600; --accent-soft: rgba(255,210,74,.14);
+  --good: #3fdc87; --mid: #ffa84a; --bad: #ff5f74; --bad-soft: rgba(255,95,116,.14);
+  --radius: 10px;
+  --shadow: 0 18px 50px rgba(0,0,0,.45), 0 2px 8px rgba(0,0,0,.3);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, system-ui, "Hiragino Sans", "Noto Sans JP", sans-serif; -webkit-font-smoothing: antialiased; }
+body { display: grid; grid-template-rows: auto 1fr auto; height: 100dvh; overflow: hidden; }
+body[data-mode=practice] .game-only, body[data-mode=game] .practice-only { display: none !important; }
+svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+svg.i.fill { fill: currentColor; stroke: none; }
+
+/* ---- 部品 ---- */
+button, select, .btn { font: inherit; color: var(--text); background: var(--raised); border: 1px solid var(--line-strong); border-radius: 8px; padding: 6px 12px; line-height: 20px; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+button, .btn { cursor: pointer; transition: background .12s, border-color .12s, color .12s, transform .06s; }
+button:hover, .btn:hover, select:hover { background: var(--raised-hi); border-color: rgba(255,255,255,.2); }
+button:active, .btn:active { transform: translateY(1px); }
+button:focus-visible, select:focus-visible, input:focus-visible, .btn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+select { appearance: none; padding-right: 28px; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23969cab' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center; }
+.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 700; }
+.primary:hover { background: #ffdc6e; border-color: transparent; }
+.ghost { background: transparent; border-color: transparent; color: var(--dim); }
+.ghost:hover { background: var(--raised); color: var(--text); border-color: transparent; }
+.icon-btn { padding: 7px; }
+.file { position: relative; overflow: hidden; flex: none; }
+.file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.hint { color: var(--dim); font-size: 12px; }
+kbd { font: 600 11px/1 ui-monospace, "SF Mono", monospace; color: var(--dim); border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; padding: 2px 5px; }
+.seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
+.seg button { border: 0; background: transparent; color: var(--dim); padding: 5px 14px; border-radius: 7px; }
+.seg button:hover { color: var(--text); background: rgba(255,255,255,.04); }
+.seg button[aria-pressed=true] { background: var(--raised-hi); color: var(--text); font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+.chip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--dim); cursor: pointer; user-select: none; transition: all .12s; }
+.chip input { position: absolute; opacity: 0; pointer-events: none; }
+.chip:hover { color: var(--text); border-color: rgba(255,255,255,.22); }
+.chip:has(input:checked) { color: var(--accent); background: var(--accent-soft); border-color: rgba(255,210,74,.45); }
+.chip:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type=range] { appearance: none; background: transparent; width: 120px; height: 20px; cursor: pointer; }
+input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--accent) var(--fill, 50%), var(--raised-hi) var(--fill, 50%)); }
+input[type=range]::-webkit-slider-thumb { appearance: none; width: 16px; height: 16px; margin-top: -6px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.5); }
+input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; background: var(--raised-hi); }
+input[type=range]::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--accent); }
+input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border: 0; border-radius: 50%; background: #fff; }
+.field { display: inline-flex; align-items: center; gap: 8px; color: var(--dim); }
+.field select { padding-top: 5px; padding-bottom: 5px; }
+
+/* ---- 上の帯: 曲・モード・いまの状態 ---- */
+.top { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 16px; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.top-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.brand { display: flex; align-items: center; gap: 8px; color: var(--accent); font-weight: 800; letter-spacing: .12em; font-size: 13px; flex: none; }
+.brand svg { width: 22px; height: 22px; }
+.song { min-width: 0; display: flex; flex-direction: column; padding-left: 14px; border-left: 1px solid var(--line-strong); }
+#title { font-weight: 700; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.song-sub { display: flex; align-items: center; gap: 10px; color: var(--dim); font-size: 12px; min-width: 0; }
+#song-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.song-sub label { display: inline-flex; align-items: center; gap: 4px; }
+.song-sub select { font-size: 12px; padding: 1px 24px 1px 8px; background-color: transparent; background-position: right 8px center; }
+.top-right { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; }
+.hud { display: flex; align-items: baseline; gap: 10px; margin-right: 6px; font-variant-numeric: tabular-nums; }
+#acc { font-size: 24px; font-weight: 800; letter-spacing: -.01em; }
+.hud-sub { display: flex; flex-direction: column; line-height: 1.25; }
+#count, #timing { color: var(--dim); font-size: 12px; white-space: nowrap; }
+.mic { padding: 7px 10px; gap: 8px; }
+.mic .bars { display: flex; align-items: flex-end; gap: 2px; height: 14px; }
+.mic .bars i { width: 3px; border-radius: 1px; background: var(--raised-hi); height: calc(var(--h) * 1px); }
+.mic .bars i.on { background: var(--good); }
+body:not(.mic-on) .mic { color: var(--faint); }
+.rec-ind { background: var(--bad); border-color: transparent; color: #fff; font-weight: 700; animation: pulse 1.4s ease-in-out infinite; }
+.rec-ind:hover { background: #ff7a8c; border-color: transparent; }
+@keyframes pulse { 50% { opacity: .65; } }
+
+/* ---- 真ん中: 譜面 ---- */
+main { position: relative; min-height: 0; }
+#stage { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#progress { position: absolute; left: 0; top: 0; height: 2px; width: calc(var(--p, 0) * 100%); background: var(--accent); opacity: .8; transition: width .15s linear; z-index: 1; }
+#drillbar { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; background: rgba(24,28,38,.92); backdrop-filter: blur(8px); border: 1px solid var(--line-strong); border-radius: 12px; box-shadow: var(--shadow); z-index: 2; }
+#drillbar .label { color: var(--dim); }
+#drillbar .label b { color: var(--text); }
+#toast { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); background: #2a3040; border: 1px solid var(--line-strong); padding: 10px 16px; border-radius: 10px; max-width: min(640px, 90%); box-shadow: var(--shadow); z-index: 5; animation: rise .2s ease-out; }
+@keyframes rise { from { opacity: 0; transform: translate(-50%, 8px); } }
+body.drag::after { content: 'ここにドロップして曲を開く'; position: fixed; inset: 14px; border: 2px dashed var(--accent); border-radius: 18px; display: grid; place-items: center; font-size: 22px; font-weight: 700; color: var(--accent); background: rgba(14,16,22,.85); z-index: 50; }
+
+/* ---- 下の帯: 範囲・はじめる・速さ ---- */
+.transport { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 16px; padding: 12px 20px; background: var(--surface); border-top: 1px solid var(--line); }
+body.reviewing .transport { display: none; }
+.t-left, .t-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-width: 0; }
+.t-right { justify-content: flex-end; }
+#play { min-width: 190px; justify-content: center; padding: 11px 24px; border-radius: 999px; font-size: 15px; box-shadow: 0 4px 18px rgba(255,210,74,.18); }
+#play kbd { color: rgba(28,22,0,.55); border-color: rgba(28,22,0,.25); margin-left: 4px; }
+body.live #play { background: var(--raised-hi); color: var(--text); box-shadow: none; border-color: var(--line-strong); }
+body.live #play:hover { background: #353c50; }
+body.live #play kbd { color: var(--dim); border-color: var(--line-strong); }
+#speed-v { min-width: 3.2em; color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ---- 設定（右から出る） ---- */
+#settings { position: fixed; top: 0; right: 0; bottom: 0; width: min(400px, 100%); background: var(--panel); border-left: 1px solid var(--line-strong); box-shadow: var(--shadow); z-index: 20; display: flex; flex-direction: column; animation: slide .18s ease-out; }
+@keyframes slide { from { transform: translateX(24px); opacity: 0; } }
+#scrim { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 19; }
+.drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.drawer-head h2 { margin: 0; font-size: 16px; }
+.drawer-body { overflow-y: auto; padding: 8px 20px 24px; }
+.drawer-body section { padding: 16px 0; border-bottom: 1px solid var(--line); }
+.drawer-body section:last-child { border-bottom: 0; }
+.drawer-body h3 { margin: 0 0 12px; font-size: 11px; font-weight: 700; letter-spacing: .1em; color: var(--faint); }
+.set { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 0; }
+.set b { display: block; font-weight: 600; }
+.set p { margin: 2px 0 0; color: var(--dim); font-size: 12px; }
+.set select { min-width: 0; max-width: 100%; }
+.set.stack { flex-direction: column; align-items: stretch; gap: 8px; }
+.levelbar { height: 6px; border-radius: 3px; background: var(--raised-hi); overflow: hidden; }
+.levelbar::after { content: ''; display: block; height: 100%; width: calc(var(--lv, 0) * 100%); background: var(--good); transition: width 60ms; }
+#lat { color: var(--dim); font-weight: 400; }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; align-items: center; color: var(--dim); font-size: 13px; }
+.keys kbd { justify-self: start; }
+
+/* ---- 結果 ---- */
+.overlay { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(10,12,17,.72); backdrop-filter: blur(3px); z-index: 3; animation: fade .18s ease-out; }
+@keyframes fade { from { opacity: 0; } }
+.card { background: var(--panel); border: 1px solid var(--line-strong); border-radius: 18px; padding: 28px; width: min(640px, calc(100% - 32px)); max-height: calc(100% - 32px); overflow-y: auto; box-shadow: var(--shadow); }
+.eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .12em; color: var(--faint); margin-bottom: 6px; }
+.big { font-size: 24px; font-weight: 800; line-height: 1.25; }
+#r-acc { font-size: 56px; font-weight: 800; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+#r-sub, #p-sub { color: var(--dim); margin: 8px 0 22px; }
+.sub-h { font-size: 12px; color: var(--dim); margin-bottom: 8px; }
+#r-bars { display: grid; grid-template-columns: repeat(auto-fill, minmax(38px, 1fr)); gap: 5px; margin-bottom: 16px; }
+.bar-cell { position: relative; height: 46px; padding: 0; overflow: hidden; background: var(--raised); border: 1px solid var(--line); border-radius: 7px; justify-content: center; align-items: flex-end; padding-bottom: 5px; }
+.bar-cell .fill { position: absolute; left: 0; right: 0; bottom: 0; height: var(--p); opacity: .35; }
+.bar-cell.good .fill { background: var(--good); } .bar-cell.mid .fill { background: var(--mid); opacity: .55; } .bar-cell.bad .fill { background: var(--bad); opacity: .6; }
+.bar-cell .num { position: relative; font-size: 12px; font-weight: 700; }
+.bar-cell.bad { border-color: rgba(255,95,116,.5); } .bar-cell.mid { border-color: rgba(255,168,74,.4); }
+#r-weak { margin-bottom: 22px; color: var(--dim); }
+button.link { background: none; border: none; color: var(--accent); padding: 0 2px; font-weight: 600; }
+button.link:hover { text-decoration: underline; background: none; }
+.actions { display: flex; gap: 8px; align-items: center; padding-top: 18px; border-top: 1px solid var(--line); }
+.actions .spacer { flex: 1; }
+#p-list { list-style: none; padding: 0; margin: 0 0 22px; display: grid; gap: 6px; }
+#p-list li { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 10px; background: var(--raised); border: 1px solid var(--line); }
+#p-list li b { min-width: 3.5em; }
+#p-list li .tags { flex: 1; display: flex; gap: 6px; flex-wrap: wrap; }
+.tag { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--bad-soft); color: #ff8e9c; white-space: nowrap; }
+.ok-mark { display: inline-grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: rgba(63,220,135,.15); color: var(--good); margin-bottom: 10px; }
+.ok-mark svg { width: 24px; height: 24px; }
+
+/* ---- 振り返り ---- */
+#rv-side { position: absolute; left: 0; top: 0; bottom: 64px; width: 300px; overflow-y: auto; padding: 18px 14px; background: var(--surface); border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 12px; }
+body.reviewing #stage { left: 300px; width: calc(100% - 300px); }
+.side-h { display: flex; align-items: baseline; justify-content: space-between; padding: 0 4px; }
+.side-h b { font-size: 15px; }
+#rv-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+#rv-list li { display: flex; align-items: baseline; gap: 10px; padding: 9px 12px; border-radius: 9px; cursor: pointer; border: 1px solid transparent; }
+#rv-list li:hover { background: var(--panel); }
+#rv-list li[aria-selected=true] { background: var(--raised); border-color: var(--line-strong); box-shadow: inset 3px 0 0 var(--accent); }
+#rv-list li b { flex: none; }
+#rv-list li .hint { flex: 1; }
+#rv-list .done { color: var(--good); font-size: 12px; white-space: nowrap; }
+#rv-detail { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+#rv-desc { white-space: pre-line; font-size: 13px; color: var(--text); line-height: 1.6; }
+#rv-detail .row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.side-foot { margin-top: auto; display: grid; gap: 8px; }
+.side-foot button { justify-content: center; }
+#review { position: absolute; left: 0; right: 0; bottom: 0; height: 64px; display: flex; align-items: center; gap: 10px; padding: 0 16px; background: var(--surface); border-top: 1px solid var(--line); }
+#rv-play { width: 40px; height: 40px; border-radius: 50%; padding: 0; justify-content: center; }
+#rv-time { color: var(--dim); font-variant-numeric: tabular-nums; min-width: 6.5em; margin-left: 4px; }
+#rv-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+#rv-legend { display: flex; gap: 10px; color: var(--dim); font-size: 12px; white-space: nowrap; }
+#rv-legend span { display: inline-flex; align-items: center; gap: 4px; }
+#rv-legend .k { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 3px; border-radius: 4px; background: var(--bad-soft); color: #ff8e9c; font-weight: 700; font-size: 11px; }
+@media (max-width: 1180px) { #rv-legend { display: none; } }
+@media (max-width: 980px) { .hud-sub, #song-meta { display: none; } .brand span { display: none; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2.5"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4.5" width="4.2" height="15" rx="1.2"/><rect x="13.8" y="4.5" width="4.2" height="15" rx="1.2"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24"><path d="M18 6l-8 6 8 6zM6 6v12"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="M6 6l8 6-8 6zM18 6v12"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-loop" viewBox="0 0 24 24"><path d="M17 2l3 3-3 3"/><path d="M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3"/><path d="M20 13v2a4 4 0 0 1-4 4H4"/></symbol>
+  <symbol id="i-metro" viewBox="0 0 24 24"><path d="M9 3h6l4 18H5z"/><path d="M12 17l5-9"/><path d="M7 14h10"/></symbol>
+  <symbol id="i-follow" viewBox="0 0 24 24"><path d="M3 12c3-6 6-6 9 0s6 6 9 0"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></symbol>
+  <symbol id="i-ear" viewBox="0 0 24 24"><path d="M3 14v-2a9 9 0 0 1 18 0v2"/><path d="M21 16a2 2 0 0 1-2 2h-1v-6h3zM3 16a2 2 0 0 0 2 2h1v-6H3z"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-logo" viewBox="0 0 24 24"><path d="M3 6h18M3 10h18M3 14h18M3 18h18" stroke-width="1.2" opacity=".45"/><rect x="5" y="4" width="5" height="4" rx="1.2" fill="currentColor" stroke="none"/><rect x="11" y="12" width="5" height="4" rx="1.2" fill="currentColor" stroke="none"/><rect x="16" y="16" width="5" height="4" rx="1.2" fill="currentColor" stroke="none" opacity=".6"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="top-left">
+    <div class="brand"><svg class="i"><use href="#i-logo"/></svg><span>FLUBATO</span></div>
+    <div class="song">
+      <div id="title"></div>
+      <div class="song-sub"><span id="song-meta"></span><label hidden>トラック <select id="track"></select></label></div>
+    </div>
+    <label class="btn ghost file" title="Guitar Pro 3〜8 / MusicXML。画面にドロップしても開けます"><svg class="i"><use href="#i-folder"/></svg>曲を開く<input id="file" type="file" accept=".gp,.gp3,.gp4,.gp5,.gpx,.gp7,.musicxml,.xml,.mxl"></label>
+  </div>
+  <div class="seg" role="group" aria-label="モード">
+    <button data-mode-btn="practice" title="弾くと譜面がついてくる。止まっても待ってくれる">練習</button>
+    <button data-mode-btn="game" title="曲が進み、それに合わせて弾く。1音ずつ判定する">音ゲー</button>
+  </div>
+  <div class="top-right">
+    <div class="hud"><span id="acc">—</span><span class="hud-sub"><span id="count"></span><span id="timing"></span></span></div>
+    <button id="rec-ind" class="rec-ind" hidden title="録音を止めて wav を保存する">● 録音中</button>
+    <button id="mic-btn" class="mic" title="マイクの設定"><svg class="i"><use href="#i-mic"/></svg><span class="bars"><i style="--h:5"></i><i style="--h:8"></i><i style="--h:11"></i><i style="--h:14"></i></span></button>
+    <button id="settings-btn" class="icon-btn ghost" title="設定"><svg class="i"><use href="#i-gear"/></svg></button>
+  </div>
+</header>
+
+<main>
+  <canvas id="stage"></canvas>
+  <div id="progress"></div>
+  <div id="drillbar" hidden>
+    <span class="label" id="drill-text"></span>
+    <button id="rv-back" hidden title="苦手な箇所の一覧に戻る"><svg class="i"><use href="#i-back"/></svg>振り返りに戻る</button>
+    <button id="run-full" class="primary" hidden title="小節の練習をやめて、練習に行く前の範囲・速さで最初から弾く"><svg class="i fill"><use href="#i-play"/></svg>最初から通す</button>
+  </div>
+  <div id="toast" hidden></div>
+
+  <div id="result" class="overlay" hidden>
+    <div class="card">
+      <div class="eyebrow">音ゲーの結果</div>
+      <div id="r-acc"></div>
+      <div id="r-sub"></div>
+      <div class="sub-h">小節ごとの出来 — 押すとその小節をくり返し練習</div>
+      <div id="r-bars"></div>
+      <div id="r-weak"></div>
+      <div class="actions">
+        <button id="r-diag" class="ghost" title="録音と、アプリがどう判断したかを1つの wav に保存する（精度の調査用）"><svg class="i"><use href="#i-save"/></svg>調査用に保存</button>
+        <span class="spacer"></span>
+        <button id="r-close">閉じる</button>
+        <button id="r-again">もう一度</button>
+        <button id="r-review" class="primary"><svg class="i"><use href="#i-ear"/></svg>録音で振り返る</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="presult" class="overlay" hidden>
+    <div class="card">
+      <div id="p-ok" class="ok-mark" hidden><svg class="i"><use href="#i-check"/></svg></div>
+      <div class="eyebrow">練習の結果</div>
+      <div id="p-title" class="big"></div>
+      <div id="p-sub"></div>
+      <ul id="p-list"></ul>
+      <div class="actions">
+        <button id="p-diag" class="ghost" title="録音と、アプリがどう判断したかを1つの wav に保存する（精度の調査用）"><svg class="i"><use href="#i-save"/></svg>調査用に保存</button>
+        <span class="spacer"></span>
+        <button id="p-close">閉じる</button>
+        <button id="p-again">もう一度</button>
+        <button id="p-review" class="primary"><svg class="i"><use href="#i-ear"/></svg>録音で振り返る</button>
+      </div>
+    </div>
+  </div>
+
+  <aside id="rv-side" hidden>
+    <div class="side-h"><b>苦手な箇所</b><span class="hint">押すとその小節を聞く</span></div>
+    <ol id="rv-list"></ol>
+    <div id="rv-detail">
+      <div id="rv-desc"></div>
+      <div class="row">
+        <button id="rv-listen"><svg class="i"><use href="#i-ear"/></svg>録音を聞く</button>
+        <button id="rv-drill" class="primary"><svg class="i"><use href="#i-loop"/></svg>この小節を練習</button>
+      </div>
+    </div>
+    <div class="side-foot">
+      <button id="rv-full" class="primary" title="練習に行く前の範囲・速さに戻して、最初から弾く"><svg class="i fill"><use href="#i-play"/></svg>最初から通す</button>
+      <button id="rv-diag" class="ghost" title="この回の録音と、アプリがどう判断したかを1つの wav に保存する（精度の調査用）"><svg class="i"><use href="#i-save"/></svg>調査用に保存</button>
+    </div>
+  </aside>
+  <div id="review" hidden>
+    <button id="rv-play" class="primary" title="再生・一時停止（スペース）"><svg class="i fill"><use href="#i-play"/></svg></button>
+    <button id="rv-prev" class="icon-btn ghost" title="前の苦手な箇所"><svg class="i"><use href="#i-prev"/></svg></button>
+    <button id="rv-next" class="icon-btn ghost" title="次の苦手な箇所"><svg class="i"><use href="#i-next"/></svg></button>
+    <span id="rv-time"></span>
+    <span id="rv-text"></span>
+    <span id="rv-legend"><span><i class="k">止</i>止まった</span><span><i class="k">間</i>間が空いた</span><span><i class="k">急</i>急いだ</span><span><i class="k">戻</i>戻った</span><span><i class="k">飛</i>飛ばした</span><span><i class="k">／</i>聞き取れない</span><span><i class="k">┈</i>小さい</span></span>
+    <button id="rv-close"><svg class="i"><use href="#i-x"/></svg>閉じる</button>
+  </div>
+</main>
+
+<footer class="transport">
+  <div class="t-left">
+    <span class="field"><span class="practice-only">ここから</span><span class="game-only">小節</span><select id="from" title="はじめる小節"></select><span class="game-only">〜</span><select id="to" class="game-only" title="おわる小節"></select></span>
+    <label class="chip game-only" title="範囲をくり返す"><input type="checkbox" id="loop"><svg class="i"><use href="#i-loop"/></svg>くり返す</label>
+    <span class="hint practice-only">譜面の小節を押しても選べます</span>
+  </div>
+  <button id="play" class="primary"></button>
+  <div class="t-right">
+    <span class="field game-only" title="曲の速さ">速さ<input type="range" id="speed" min="40" max="120" step="5" value="100"><span id="speed-v"></span></span>
+    <label class="chip game-only" title="曲のテンポを、弾く人の溜め・走りに少しずつ合わせる。弾くはずの音を過ぎても、少し待つ"><input type="checkbox" id="follow"><svg class="i"><use href="#i-follow"/></svg>テンポを合わせる</label>
+    <label class="chip game-only" title="拍に合わせてクリックを鳴らす"><input type="checkbox" id="metro"><svg class="i"><use href="#i-metro"/></svg>メトロノーム</label>
+    <span class="hint practice-only">止まっても待ちます。弾き直してもついていきます</span>
+  </div>
+</footer>
+
+<div id="scrim" hidden></div>
+<aside id="settings" hidden aria-label="設定">
+  <div class="drawer-head"><h2>設定</h2><button id="settings-close" class="icon-btn ghost" title="閉じる（Esc）"><svg class="i"><use href="#i-x"/></svg></button></div>
+  <div class="drawer-body">
+    <section>
+      <h3>マイク</h3>
+      <div class="set stack">
+        <select id="device"><option value="">既定のマイク（Mac の設定で選んでいるもの）</option></select>
+        <div class="levelbar" title="マイクの音量"></div>
+        <p class="hint" id="mic-state"></p>
+        <button id="mic-start" class="primary" style="justify-content:center"><svg class="i"><use href="#i-mic"/></svg>マイクを使う</button>
+      </div>
+      <div class="set">
+        <div><b>タイミング合わせ</b><p>1弦の開放を12回弾いて、マイクの遅れを測ります。音ゲーの判定に使います。</p></div>
+        <button id="calib">測る <span id="lat"></span></button>
+      </div>
+    </section>
+    <section>
+      <h3>音ゲーモード</h3>
+      <div class="set">
+        <div><b>判定の厳しさ</b><p>どれだけずれても当たりにするか</p></div>
+        <select id="strict"><option value="loose">ゆるめ</option><option value="normal">ふつう</option><option value="strict">きびしめ</option></select>
+      </div>
+      <div class="set">
+        <div><b>音符の間隔</b><p>広げると1音ずつ読みやすく、狭めると先まで見える</p></div>
+        <input type="range" id="zoom" min="120" max="480" step="20">
+      </div>
+    </section>
+    <section>
+      <h3>調整用</h3>
+      <div class="set">
+        <div><b>録音</b><p>マイクの音をそのまま wav で保存します（判定の調整用）。</p></div>
+        <button id="rec"><span style="color:var(--bad)">●</span> 録音</button>
+      </div>
+    </section>
+    <section>
+      <h3>キーボード</h3>
+      <div class="keys"><kbd>Space</kbd><span>はじめる・とめる／振り返りの再生</span><kbd>Esc</kbd><span>いま開いている画面を閉じる</span><kbd>← →</kbd><span>振り返りで前・次の苦手な箇所</span></div>
+    </section>
+  </div>
+</aside>
+<script type="module" src="./dist/app.js"></script>
+</body>
+</html>

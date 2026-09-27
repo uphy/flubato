@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.DS_Store
+
+# CI が作る wrangler の設定（tools/prepare-preview.mjs）
+.wrangler-preview.json
+.wrangler/
+
+# 手元の作業メモ（公開しない）
+docs/direction.md

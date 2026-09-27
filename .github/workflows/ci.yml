@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+# 既定では読むだけにする。書き込みが要るジョブだけ、ジョブの permissions で足す
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+  # PR 専用の Worker に公開する。本番のカスタムドメインには載らない。
+  # スマホやギターの前の端末で実際に弾いて確かめてから merge するために使う。
+  # URL は新しい版が配信されてから PR のコメントに書き、push のたびに前のコメントを消して最新の commit の下に書き直す。
+  # fork からの PR には secrets が渡らず Cloudflare に上げられないので、このリポジトリのブランチの PR だけで走らせる
+  #
+  # push の直後に merge すると、preview-cleanup.yml が片付け終えたあとでこのジョブが Worker を作り、残ってしまう。
+  # 片付けと同じ concurrency のグループに入れて同時に走らないようにし、上げる直前に PR がまだ開いているかを見る
+  preview:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    concurrency:
+      group: preview-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+        env:
+          # checkout は PR のマージコミットなので、アプリに埋める commit は head のものを渡す
+          BUILD_COMMIT: ${{ github.event.pull_request.head.sha }}
+      - name: PR がまだ開いているかを見る
+        id: state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          state=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" --jq .state)
+          echo "PR の状態: $state"
+          echo "open=$([ "$state" = open ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: プレビュー版をアップロード
+        id: upload
+        if: steps.state.outputs.open == 'true'
+        run: |
+          node tools/prepare-preview.mjs
+          npx wrangler deploy -c .wrangler-preview.json | tee upload.log
+          url=$(grep -o 'https://[a-z0-9.-]*workers\.dev' upload.log | head -1)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: 新しい版が配信されるまで待つ
+        if: steps.state.outputs.open == 'true'
+        env:
+          URL: ${{ steps.upload.outputs.url }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # アップロードが済んでも、しばらくは前の版が返ることがある。
+          # 配信されている index.html が、いまビルドしたものと同じになってから URL を知らせる
+          for i in $(seq 1 60); do
+            if curl -fsS "$URL/?v=$SHA" | cmp -s - dist/index.html; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::5 分待っても新しい版が配信されない"
+          exit 1
+      - name: PR にプレビュー URL をコメント
+        if: steps.state.outputs.open == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          URL: ${{ steps.upload.outputs.url }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # 前のコメントを消して新しく書く。更新するだけだと最初の push の位置に残り、
+          # タイムラインのどの commit の版なのかが分からない。書き直すと最新の commit の下に並ぶ
+          repo="${{ github.repository }}"
+          pr="${{ github.event.pull_request.number }}"
+          for id in $(gh api --paginate "repos/$repo/issues/$pr/comments" --jq '.[] | select(.body | startswith("<!-- preview-url -->")) | .id'); do
+            gh api -X DELETE "repos/$repo/issues/comments/$id" > /dev/null
+          done
+          # 目印の HTML コメントは1行で独立させ、空行で区切る。同じ行に続けて書くと、行全体が HTML ブロック扱いになって
+          # URL がリンクにならない。commit の短縮ハッシュは GitHub がその commit へのリンクにする
+          body="<!-- preview-url -->
+
+          ${URL} ${SHA:0:7}"
+          gh pr comment "$pr" --body "$body"
