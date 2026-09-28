@@ -3,17 +3,23 @@
 // 認識が少し遅れたり迷ったりしても、弾く人は先を読んでいるので止まらずにすむ。
 
 import { drawRhythm, RHYTHM_H } from './rhythm.js';
+import timeSigFont from './fonts/timesig.woff2';
+
+// 拍子記号の数字は、楽譜用のフォント Bravura（alphaTab に同梱。SIL OFL）の拍子記号の字形を使う。
+// 0〜9 の字形（U+E080〜E089）だけを抜き出し、OFL の決まりで名前を変えてある（ライセンスは fonts/timesig-OFL.txt）
+const TIME_SIG = new FontFace('Flubato Time Signature', `url(${timeSigFont})`);
+document.fonts.add(TIME_SIG);
+TIME_SIG.load().catch(() => {}); // 読めなければ普通の数字で描く
 
 const MIN_GROUP_PX = 32;
-const CLEF_W = 30; // 段の頭の TAB の記号のぶん
-const SIG_W = 26; // 拍子記号のぶんの幅
+const SIG_W = 36; // 拍子記号のぶんの幅
 const LEGATO_TAGS = { h: 'H', p: 'P', s: 'S' }; // レガートの弧に添える文字（日本の市販譜と同じ大文字）
 const STROKE_W = 0.6; // ストロークの矢印のぶんの幅（和音1つぶんの間隔に対する割合）
 const FONT = '-apple-system, system-ui, "Helvetica Neue", sans-serif';
 const SERIF = '"Times New Roman", Times, Georgia, "Noto Serif", serif'; // D.S.・コーダの言葉
 // 色（index.html の CSS と合わせる）
 const C = {
-  bg: '#0e1016', ink: '#eceef3', played: 'rgba(236,238,243,0.28)', faint: 'rgba(236,238,243,0.38)', clef: 'rgba(236,238,243,0.3)',
+  bg: '#0e1016', ink: '#eceef3', played: 'rgba(236,238,243,0.28)', faint: 'rgba(236,238,243,0.38)',
   string: 'rgba(255,255,255,0.17)', barline: 'rgba(255,255,255,0.34)', rhythm: 'rgba(236,238,243,0.42)',
   accent: '#ffd24a', accentSoft: 'rgba(255,210,74,0.075)', hover: 'rgba(255,255,255,0.035)',
   bad: '#ff5f74', badSoft: 'rgba(255,95,116,0.13)',
@@ -54,10 +60,10 @@ export class SheetView {
     if (this._rowsFor === chart && this._w === this.w && this._k === k) return this.rows;
     // 狭い画面では、和音どうしの間隔をさらに詰める（数字の大きさのわりに、広い画面の間隔は余白が多い）
     const gx = k * (this.w < 600 ? 0.7 : 1);
-    // 横に広い画面でも1段が長くなりすぎないよう、幅に上限を付けて真ん中に置く。左端は TAB の記号のぶん空ける
+    // 横に広い画面でも1段が長くなりすぎないよう、幅に上限を付けて真ん中に置く
     const span = Math.min(this.w - (this.w < 600 ? 16 : 48), 1560);
-    const left = (this.w - span) / 2 + CLEF_W * k, right = (this.w + span) / 2;
-    this.rowLeft = left - CLEF_W * k;
+    const left = (this.w - span) / 2, right = (this.w + span) / 2;
+    this.rowLeft = left;
     // 小節の中の横位置: 楽譜の組版と同じく、休符も含めて拍ごとに場所を取り、長い音ほど少し広く（時間の平方根）。
     // 時間に比例させると、休符のあとに短い音が続く小節で数字が右端に詰まって重なる
     this.barPos = new Map();
@@ -79,7 +85,10 @@ export class SheetView {
     this.sigOf = new Map();
     chart.bars.forEach((bar, i) => {
       const prev = chart.bars[i - 1];
-      if (bar.num && (!prev || prev.num !== bar.num || prev.den !== bar.den)) this.sigOf.set(i, { num: bar.num, den: bar.den, w: SIG_W * k });
+      if (bar.num && (!prev || prev.num !== bar.num || prev.den !== bar.den)) {
+        const digits = Math.max(String(bar.num).length, String(bar.den).length); // 12/8 のような2桁は広めに
+        this.sigOf.set(i, { num: bar.num, den: bar.den, w: SIG_W * k * Math.max(1, 0.7 * digits) });
+      }
     });
     const rows = [];
     let row = [], x = left;
@@ -222,7 +231,7 @@ export class SheetView {
       placed.push({ grp, gi, ri, top, x, notes });
     });
 
-    // 段: 小節の地・弦・小節線・TAB の記号・小節番号・リズム
+    // 段: 小節の地・弦・小節線・拍子記号・小節番号・リズム
     rows.forEach((row, ri) => {
       if (!visible(ri)) return;
       const top = topOf(ri), bot = top + staffH;
@@ -260,10 +269,24 @@ export class SheetView {
       for (const b of row) {
         const sig = this.sigOf.get(b.i);
         if (!sig) continue;
-        const sx = b.x + 6 * k + sig.w / 2, sf = Math.round(Math.min(staffH * 0.42, 26 * k));
-        g.font = `600 ${sf}px ${FONT}`; g.textAlign = 'center'; g.fillStyle = C.faint; // 数字より控えめに
-        g.fillText(String(sig.num), sx, top + staffH * 0.27);
-        g.fillText(String(sig.den), sx, top + staffH * 0.73);
+        // 小節線の右から、最初の和音の囲み（xAt から fs * 0.78 左まで）の手前までに収める
+        const sx0 = b.x + 6 * k, sx1 = b.x + 18 * k + sig.w - fs * 0.9, sx = (sx0 + sx1) / 2;
+        g.textAlign = 'center'; g.fillStyle = C.faint; // 数字より控えめに
+        if (TIME_SIG.status === 'loaded') {
+          // SMuFL の拍子記号の数字は、フォントの大きさの半分の高さで、ベースラインが字の真ん中。段の上半分・下半分に1つずつ置く。
+          // 字の幅はフォントの大きさの 0.47 倍までなので、空けた幅に収まる大きさにする
+          const digits = Math.max(String(sig.num).length, String(sig.den).length);
+          const sf = Math.round(Math.min(staffH * 0.76, (sx1 - sx0) / (0.47 * digits))), glyphs = n => [...String(n)].map(d => String.fromCharCode(0xE080 + Number(d))).join('');
+          g.font = `${sf}px "Flubato Time Signature"`; g.textBaseline = 'alphabetic';
+          g.fillText(glyphs(sig.num), sx, top + staffH * 0.25);
+          g.fillText(glyphs(sig.den), sx, top + staffH * 0.75);
+          g.textBaseline = 'middle';
+        } else {
+          const sf = Math.round(Math.min(staffH * 0.42, 26 * k));
+          g.font = `600 ${sf}px ${FONT}`;
+          g.fillText(String(sig.num), sx, top + staffH * 0.27);
+          g.fillText(String(sig.den), sx, top + staffH * 0.73);
+        }
       }
       // 小節線（段の頭と、曲の終わりは太く）
       const barLine = (x, w = 1, color = C.barline) => {
@@ -272,15 +295,6 @@ export class SheetView {
       barLine(x0 + 0.5);
       for (const b of row.slice(1)) barLine(b.x);
       if (last.i === chart.bars.length - 1) { barLine(x1 - 6); barLine(x1 - 1.5, 3, C.ink); } else barLine(x1);
-      // TAB
-      g.font = `800 ${Math.round(Math.min(19, staffH / 4.6))}px ${FONT}`;
-      g.textAlign = 'center';
-      const ch = Math.round(Math.min(19, staffH / 4.6));
-      ['T', 'A', 'B'].forEach((c, j) => {
-        const y = top + staffH / 2 + (j - 1) * ch * 1.12;
-        g.fillStyle = C.bg; g.fillRect(x0 + CLEF_W * k / 2 - ch * 0.5, y - ch * 0.5, ch, ch);
-        g.fillStyle = C.clef; g.fillText(c, x0 + CLEF_W * k / 2, y + 0.5);
-      });
       // リズムは rhythm.js の寸法のまま描いて、段の下端を原点に k 倍する。符尾は数字の上下の端から
       const o = bot + fs * 0.3, local = y => (y - o) / k;
       const stemFrom = r => {
@@ -437,7 +451,7 @@ export class SheetView {
       for (const run of runs) for (const { ri, gis, row, first, end } of byRow(run)) {
         const last = row[row.length - 1];
         const y = topOf(ri) - upH - stringGap * (1.95 + 0.6 * lane); // 小節番号と同じく、上の声部の符尾の段の上に
-        let x0 = first ? gx(gis[0]) - fs * 0.5 : this.rowLeft + CLEF_W * k;
+        let x0 = first ? gx(gis[0]) - fs * 0.5 : this.rowLeft;
         let x1 = end ? gx(gis[gis.length - 1]) + fs * 0.9 : last.x + last.w;
         g.fillStyle = g.strokeStyle = C.faint;
         if (first) {
@@ -467,7 +481,7 @@ export class SheetView {
         const dir = chart.groups[run[0]].hairpin, after = run[run.length - 1] + 1;
         for (const { ri, gis, row, first, end } of byRow(run)) {
           const last = row[row.length - 1], y = dynY(ri), h = 5.5 * k;
-          const x0 = first ? gx(gis[0]) + (labelW(gis[0]) ? labelW(gis[0]) / 2 + 5 * k : -fs * 0.3) : this.rowLeft + CLEF_W * k;
+          const x0 = first ? gx(gis[0]) + (labelW(gis[0]) ? labelW(gis[0]) / 2 + 5 * k : -fs * 0.3) : this.rowLeft;
           // 次の和音が同じ段にあれば、その手前（強弱記号があればその左端の手前）まで
           const next = end && after < chart.groups.length && this.rowOfBar.get(chart.groups[after].bar) === ri;
           let x1 = next ? gx(after) - Math.max(fs * 0.6, labelW(after) / 2 + 5 * k) : end ? gx(gis[gis.length - 1]) + fs : last.x + last.w - 4 * k;
