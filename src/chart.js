@@ -32,9 +32,10 @@ export function guitarTracks(score) {
 
 /**
  * 譜面を作る。
- * notes: { id, t, dur, string(1=1弦), fret, midi, kind('normal'|'dead'|'harmonic'|'legato'), group, bar }
+ * notes: { id, t, dur, string(1=1弦), fret, midi, kind('normal'|'dead'|'harmonic'|'legato'), grace, group, bar }
+ *   grace: 装飾音なら { slot }。slot は本音符までに挟まる装飾音の数（0 = 本音符の直前）
  * bars:  { t, index(0始まり), number(表示用) } を再生順に
- * group: 同時に弾く音のまとまり（和音）。groups[g] = { t, noteIds }
+ * group: 同時に弾く音のまとまり（和音）。groups[g] = { t, noteIds, bar, grace（装飾音だけの和音なら true） }
  */
 export function buildChart(score, trackIndex) {
   const settings = new at.Settings();
@@ -91,7 +92,9 @@ export function buildChart(score, trackIndex) {
         const beat = item.beat;
         if (beat.voice.bar.staff.track.index !== trackIndex || taken.has(beat)) continue;
         taken.add(beat);
-        rawRhythm.push({
+        const grace = beat.graceType !== at.model.GraceType.None;
+        // 装飾音は拍の長さを持たないので、リズムの段には出さない
+        if (!grace) rawRhythm.push({
           bar: bars.length - 1, tick: item.playbackStart, t: tickToSec(mb.start + item.playbackStart),
           duration: beat.duration, dots: beat.dots, tuplet: beat.hasTuplet ? beat.tupletNumerator : 0,
           rest: beat.isRest || beat.notes.length === 0,
@@ -113,7 +116,7 @@ export function buildChart(score, trackIndex) {
             midi = open + NATURAL_HARMONIC[n.fret];
           } else if (n.isHammerPullDestination || n.isSlurDestination || n.slideOrigin) kind = 'legato';
           const id = notes.length;
-          notes.push({ id, t, dur, string: guitarString, fret: n.fret, midi, kind, group: groups.length, bar: bars.length - 1 });
+          notes.push({ id, t, dur, string: guitarString, fret: n.fret, midi, kind, grace: grace ? { slot: 0 } : null, group: groups.length, bar: bars.length - 1 });
           ids.push(id);
         }
         if (ids.length > 0) groups.push({ t, noteIds: ids, bar: bars.length - 1 });
@@ -129,6 +132,14 @@ export function buildChart(score, trackIndex) {
     else merged.push({ t: g.t, noteIds: [...g.noteIds], bar: g.bar });
   }
   merged.forEach((g, i) => g.noteIds.forEach(id => { notes[id].group = i; }));
+  merged.forEach(g => { g.grace = g.noteIds.every(id => notes[id].grace); });
+  // 装飾音が続くとき、本音符から数えて何番目か（描くときに左へずらして並べる）
+  for (let i = merged.length - 1, slot = 0; i >= 0; i--) {
+    const graces = merged[i].noteIds.filter(id => notes[id].grace);
+    if (graces.length === 0) { slot = 0; continue; }
+    graces.forEach(id => { notes[id].grace.slot = slot; });
+    slot++;
+  }
 
   // リズム: 小節の中の同じ位置の拍をまとめる。ボイスが複数あるとき（ベースをのばしながらメロディを刻む）は、
   // いちばん短い音価を出す（弾くタイミングが分かればいい）。どのボイスも休符なら休符

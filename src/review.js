@@ -66,8 +66,8 @@ export function practiceReview(chart, follower, rec, opts = {}) {
     if (pos < prev) {
       groups[prev].marks.push({ kind: 'back', text: `ここで${barNo(pos)}小節${pos === follower.barStart[pos] ? 'の頭' : ''}へ戻った` });
     } else {
-      for (let g = prev + 1; g < pos; g++) if (groups[g].t === null) groups[g].marks.push({ kind: 'skip', text: '飛ばした' });
-      if (pos === prev + 1 && lastT !== null && prev >= 0) {
+      for (let g = prev + 1; g < pos; g++) if (groups[g].t === null && !chart.groups[g].grace) groups[g].marks.push({ kind: 'skip', text: '飛ばした' });
+      if (follower.isNext(prev, pos) && lastT !== null && prev >= 0) {
         const gap = t - lastT;
         const scoreGap = Math.max(0.05, chart.groups[pos].t - chart.groups[prev].t);
         const k = tempo();

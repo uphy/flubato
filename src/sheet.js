@@ -122,8 +122,11 @@ export class SheetView {
     const padTop = stringGap * 1.6 + 8;
     const fs = Math.max(9, Math.round(stringGap * 0.8));
     const font = `600 ${fs}px ${FONT}`;
+    const graceFont = `600 ${Math.round(fs * 0.72)}px ${FONT}`; // 装飾音は小さく
 
-    const next = rv ? rv.cursor ?? rv.selected ?? -1 : Math.min(chart.groups.length - 1, state.pos + 1);
+    let next = rv ? rv.cursor ?? rv.selected ?? -1 : Math.min(chart.groups.length - 1, state.pos + 1);
+    // 次に弾くところは本音符で示す（装飾音は弾き逃しても進むので、装飾音で待っているように見せない）
+    if (!rv) while (chart.groups[next]?.grace && next < chart.groups.length - 1) next++;
     const curBar = chart.groups[Math.max(0, next)]?.bar ?? 0;
     const curRow = this.rowOfBar.get(curBar) ?? 0;
     // いまの段が上から2段目に来るように（最初は1段目）
@@ -160,6 +163,7 @@ export class SheetView {
       const notes = grp.noteIds.map(id => {
         const n = chart.notes[id];
         const label = n.kind === 'dead' ? '×' : n.kind === 'harmonic' ? `<${n.fret}>` : String(n.fret);
+        g.font = n.grace ? graceFont : font;
         const tw = g.measureText(label).width + fs * 0.35;
         const key = `${ri}:${n.string}`;
         if (!gaps.has(key)) gaps.set(key, []);
@@ -254,6 +258,7 @@ export class SheetView {
           : played === 1 ? C.played
           : C.ink;
         g.fillStyle = color;
+        g.font = n.grace ? graceFont : font;
         g.fillText(label, x, y + 1);
         const p = this.prevOnString.get(id);
         if (p !== undefined) {

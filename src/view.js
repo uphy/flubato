@@ -120,14 +120,21 @@ export class View {
     const nh = L.noteH, nw = Math.max(nh * 1.2, 28);
     g.font = `700 ${Math.round(nh * 0.62)}px ${FONT}`;
     g.textAlign = 'center';
-    for (let i = chart.notes.length - 1; i >= 0; i--) {
-      const n = chart.notes[i];
-      if (n.t + n.dur < tMin || n.t > tMax) continue;
+    // 装飾音は本音符とほとんど同じ時刻なので、そのまま置くと本音符の箱に重なって隠してしまう。
+    // 小さく描いて本音符の左に並べ、本音符をあとから（上に）描く
+    const gh = nh * 0.62, gw = Math.max(gh * 1.2, 18);
+    const drawNote = (i, n) => {
       const st = judge?.state[i];
       const res = st?.result;
-      if (res === 'skip') continue;
-      const x = xOf(n.t), y = L.lanes[n.string - 1];
+      if (res === 'skip') return;
       const color = STRING_COLORS[n.string - 1];
+      let x = xOf(n.t), y = L.lanes[n.string - 1];
+      if (n.grace) {
+        const main = chart.groups[n.group + n.grace.slot + 1];
+        if (main) x = Math.min(x, xOf(main.t) - nw / 2 - gw / 2 - 3 - n.grace.slot * (gw + 3));
+        drawGrace(g, n, res, x, y, gw, gh, color, song);
+        return;
+      }
       // のばし
       if (n.dur > 0.3) {
         g.fillStyle = res === 'miss' ? 'rgba(120,120,130,0.3)' : color + '40';
@@ -135,7 +142,7 @@ export class View {
       }
       let alpha = 1;
       if (res === 'hit') alpha = Math.max(0, 1 - (song - n.t) * 2.5);
-      if (alpha <= 0) continue;
+      if (alpha <= 0) return;
       g.globalAlpha = alpha;
       if (res !== 'miss' && res !== 'hit') { g.save(); g.shadowColor = color + '88'; g.shadowBlur = 10; }
       g.fillStyle = res === 'miss' ? '#3a3e4a' : res === 'hit' ? '#ffffff' : color;
@@ -150,7 +157,12 @@ export class View {
         g.beginPath(); g.arc(x - nw / 2 - 2, y - nh / 2 - 2, 5, Math.PI, 1.5 * Math.PI); g.stroke();
       }
       g.globalAlpha = 1;
-    }
+    };
+    const shown = n => n.t + n.dur >= tMin && n.t <= tMax;
+    g.font = `700 ${Math.round(gh * 0.66)}px ${FONT}`;
+    for (let i = chart.notes.length - 1; i >= 0; i--) if (chart.notes[i].grace && shown(chart.notes[i])) drawNote(i, chart.notes[i]);
+    g.font = `700 ${Math.round(nh * 0.62)}px ${FONT}`;
+    for (let i = chart.notes.length - 1; i >= 0; i--) if (!chart.notes[i].grace && shown(chart.notes[i])) drawNote(i, chart.notes[i]);
 
     // 判定ラインより左（もう過ぎたところ）は暗く
     const past = g.createLinearGradient(0, 0, L.hitX, 0);
@@ -235,4 +247,21 @@ function roundRect(g, x, y, w, h, r) {
   g.arcTo(x, y + h, x, y, r);
   g.arcTo(x, y, x + w, y, r);
   g.closePath();
+}
+
+/** 装飾音: 小さな箱。弾き逃しても失敗の色にはしない（res === 'pass'） */
+function drawGrace(g, n, res, x, y, w, h, color, song) {
+  let alpha = res === 'pass' ? 0.4 : 0.9;
+  if (res === 'hit') alpha = Math.max(0, 1 - (song - n.t) * 2.5);
+  if (alpha <= 0) return;
+  g.globalAlpha = alpha;
+  g.fillStyle = res === 'hit' ? '#ffffff' : color;
+  roundRect(g, x - w / 2, y - h / 2, w, h, h * 0.32);
+  g.fill();
+  g.fillStyle = res === 'hit' ? color : '#10121a';
+  g.fillText(n.kind === 'dead' ? '×' : n.kind === 'harmonic' ? `<${n.fret}>` : String(n.fret), x, y + 1);
+  // 装飾音の印（音符に斜線）
+  g.strokeStyle = '#ffffffcc'; g.lineWidth = 1.5;
+  g.beginPath(); g.moveTo(x + w / 2 - 5, y - h / 2 - 5); g.lineTo(x + w / 2 + 3, y - h / 2 + 3); g.stroke();
+  g.globalAlpha = 1;
 }

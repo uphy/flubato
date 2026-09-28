@@ -44,7 +44,10 @@ export class FlexClock {
   /** いまの曲の時刻 song で、時計の進む速さ（速さの設定に掛ける倍率） */
   rate(song) {
     let rate = this.k;
-    const g = this.follower.pos + 1, grp = this.chart.groups[g];
+    let g = this.follower.pos + 1;
+    // 装飾音は弾き逃しても待たない（その先の本音符で待つ）
+    while (this.chart.groups[g]?.grace) g++;
+    const grp = this.chart.groups[g];
     // 次の和音の時刻を過ぎたのに、追従器も判定もまだ弾いたと見ていなければ、待つ
     if (grp && song > grp.t && !grp.noteIds.some(id => this.judge.state[id].result === 'hit')) {
       rate *= Math.max(this.o.waitMin, 1 - (song - grp.t) / this.judge.o.late);

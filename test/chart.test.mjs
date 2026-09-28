@@ -28,3 +28,14 @@ test('別のボイスで刻んでいても、のばしている音は1度だけ�
   assert.equal(c.notes.length, 18);
   assert.ok(c.notes.every((n, i) => i === 0 || c.notes[i - 1].t <= n.t), '時刻の順に並ぶ');
 });
+
+test('装飾音は本音符と別の音として入り、印が付く。リズムの段には出さない', () => {
+  const c = buildChart(scoreFromAlphaTex(`\\tempo 60 . 0.3.4 2.3.4 {gr} 3.3.4 {gr} 5.3.4 7.3.4 0.3.4 | 0.1.1`), 0);
+  const bar0 = c.notes.filter(n => n.bar === 0);
+  assert.deepEqual(bar0.map(n => [n.fret, n.grace && n.grace.slot]), [[0, null], [2, 1], [3, 0], [5, null], [7, null], [0, null]],
+    '本音符に近い装飾音ほど slot が小さい');
+  const main = bar0[3];
+  assert.equal(main.t, 1, '本音符は拍の頭に残る');
+  assert.ok(bar0[1].t < bar0[2].t && bar0[2].t < main.t);
+  assert.equal(c.rhythm.filter(r => r.bar === 0).length, 4);
+});
