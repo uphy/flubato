@@ -15,6 +15,23 @@ const DYNAMICS = [
   ['sf', 1], ['sfp', 1], ['sfpp', 1], ['fp', 0], ['rf', 1],
 ];
 
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const TUNING_NAMES = { EADGBE: 'レギュラー', DADGBE: 'ドロップD' };
+
+/** 開放弦の高さ（MIDI。[0] が1弦）→ 6弦から並べた名前。よく使うものは呼び名にする（DADGAD はそのまま読める） */
+export function tuningName(tuning) {
+  const names = [...tuning].reverse().map(m => NOTE_NAMES[m % 12]);
+  const joined = names.join('');
+  return TUNING_NAMES[joined] ?? (names.some(n => n.length > 1) ? names.join(' ') : joined);
+}
+
+/** 曲を弾く前に合わせるもの（チューニングとカポ）。レギュラーでカポ無しなら null */
+export function setupLabel(chart) {
+  const name = tuningName(chart.tuning);
+  if (name === 'レギュラー' && !chart.capo) return null;
+  return [name === 'レギュラー' ? null : name, chart.capo ? `カポ ${chart.capo}` : null].filter(Boolean).join(' · ');
+}
+
 export function loadScore(bytes) {
   const settings = new at.Settings();
   return at.importer.ScoreLoader.loadScoreFromBytes(bytes, settings);

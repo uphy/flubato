@@ -221,7 +221,8 @@ export class View {
       g.fillStyle = STRING_COLORS[i];
       g.font = `700 ${Math.round(r * 0.95)}px ${FONT}`;
       g.textAlign = 'center';
-      g.fillText(chart.tuning ? NAMES[(chart.tuning[i] + (chart.capo || 0)) % 12] : String(i + 1), 22, y + 0.5);
+      // 弦の呼び名（DADGAD の D・A など）。カポで鳴る高さは変わっても、弦の呼び名は変えない
+      g.fillText(chart.tuning ? NAMES[chart.tuning[i] % 12] : String(i + 1), 22, y + 0.5);
     });
 
     // 当たったときの輪

@@ -63,11 +63,11 @@ def page_image(n):
     return Image.open(path).convert("L")
 
 
-def staffs(im):
-    """横線を探し、等間隔に並ぶまとまりを返す（6本 = TAB、5本 = 五線）"""
+def staffs(im, dark):
+    """横線を探し、等間隔に並ぶまとまりを返す（6本 = TAB、5本 = 五線）。dark より暗い画素を線とみなす"""
     w, h = im.size
     px = im.load()
-    rows = [y for y in range(h) if sum(1 for x in range(0, w, 4) if px[x, y] < 128) > w / 4 * 0.5]
+    rows = [y for y in range(h) if sum(1 for x in range(0, w, 4) if px[x, y] < dark) > w / 4 * 0.5]
     lines = []
     for y in rows:
         if lines and y - lines[-1][-1] <= 2:
@@ -90,7 +90,7 @@ def staffs(im):
     return groups
 
 
-def barlines(im, top, bot):
+def barlines(im, top, bot, thr):
     """top〜bot（px）を縦に貫く線の x（px）。
 
     全弦に数字が並ぶ和音（とアルペジオの波線）も TAB を縦に埋める。小節線は1本目と6本目の線でちょうど止まるが、
@@ -102,10 +102,10 @@ def barlines(im, top, bot):
     sp = (bot - top) / 5
 
     def dark(x, y):
-        return 0 <= y < h and px[x, y] < 128
+        return 0 <= y < h and px[x, y] < thr
 
     xs = [x for x in range(im.size[0])
-          if sum(1 for y in range(int(top), int(bot) + 1) if px[x, y] < 128) >= (bot - top) * 0.95]
+          if sum(1 for y in range(int(top), int(bot) + 1) if px[x, y] < thr) >= (bot - top) * 0.95]
     out = []
     for x in xs:
         if out and x - out[-1][-1] <= 3:
@@ -140,7 +140,11 @@ for pn in range(first, last + 1):
         if ws:
             small_w[d] = ws[len(ws) // 2] * 0.93
     im = page_image(pn)
-    groups = staffs(im)
+    # 線を灰色（明るさ 170 ほど）の細線で描いた PDF もある（「にびいろの風」）。黒で探して TAB が1つも無ければ、灰色まで広げる
+    for dark in (128, 200):
+        groups = staffs(im, dark)
+        if any(len(g) == 6 for g in groups):
+            break
     # 五線の下に長い連桁があると、五線 + 1本が6本の組に見える。TAB は五線より線の間隔が広いので、間隔の揃わない組を除く
     tabs = [g for g in groups if len(g) == 6]
     if tabs:
@@ -152,7 +156,7 @@ for pn in range(first, last + 1):
         l1, l6 = tab[0] / k, tab[-1] / k
         notation = [g for g in fives if g[-1] < tab[0] and tab[0] - g[-1] < 120 * k]
         top_px = (notation[-1][0] if notation else tab[0]) - 45 * k
-        bars = barlines(im, tab[0], tab[-1])
+        bars = barlines(im, tab[0], tab[-1], dark)
         # 段の頭の小節番号（五線の左端の数字）
         lefts = [w for w in words if w["x1"] < bars[0][0] / k + 2 and w["t"].isdigit()
                  and top_px / k < w["y0"] < l1]
