@@ -88,8 +88,10 @@ export class View {
     for (const bar of chart.bars) {
       if (bar.t < tMin - 10 || bar.t > tMax) continue;
       const x = Math.round(xOf(bar.t) - nw / 2 - 6);
-      g.fillStyle = 'rgba(255,255,255,0.32)';
-      g.fillRect(x, yTop - 10, 1, yBot - yTop + 10);
+      // 1弦から6弦までのあいだだけに、弦より目立たない濃さで
+      const y0 = L.lanes[0], y1 = L.lanes[L.lanes.length - 1];
+      g.fillStyle = 'rgba(255,255,255,0.16)';
+      g.fillRect(x, y0, 1, y1 - y0);
       g.fillStyle = 'rgba(236,238,243,0.45)';
       g.fillText(String(bar.number), x + 6, yTop - 12 - (chart.voiced ? RHYTHM_H : 0));
     }
