@@ -160,12 +160,14 @@ EOF
 python3 $T/merge.py header.atex song.atex part1.atex part2.atex ...
 node $T/check.mjs song.atex
 node $T/render.mjs song.atex 2400
+node $T/order.mjs song.atex          # 反復・D.S.・コーダの再生の順（原本の流れと合わせる）
 ```
 
 `merge.py` は分担の末尾で省かれた小節線 `|` を補う。**補わないと、前の分担の最後の小節と次の分担の最初の小節が1小節につながる**（分担単体では検査を通るので気付かない）。
 
 ### 6. 人に渡す
 
+- **D.S.・コーダは報告に弾く順を書く**（`order.mjs` の出力）。展開して小節番号がずれたら、原本の何小節目が .gp の何小節目かも書く
 - **出力は原本と同じフォルダに、原本と同じ名前で置く**（`Angelina.pdf` → `Angelina.gp` と `Angelina.atex`）。曲集の1曲は `曲名 (曲集名).gp`（例 `Blue Moon (Best of Tommy Emmanuel).gp`。同じ曲の別の採譜と並んでも区別できる）。同じ名前のファイルがあれば上書きせず、人に聞く。作業ディレクトリ（`/tmp/...`）に置いたままにしない
   - `.gp` は TuxGuitar 2.1 / Guitar Pro / flubato で開ける。`.atex` は正本で、直すならこちら
 - **報告の冒頭に `.gp` の絶対パスをコードブロックで書き、`open -R <パス>` で Finder に出す。** どこにできたか分からない、と言われたため
@@ -198,6 +200,30 @@ node $T/render.mjs song.atex 2400
 | 声部 | `\voice` | 全小節の voice1 を書いてから、全小節の voice2 |
 | 拍子の変更 | 小節の頭に `\ts 3 4` | voice1 にだけ書く |
 | 反復 | `\ro` … `\rc 2`、括弧は `\ae (1)` | |
+| D.S. / D.C. / コーダ | 小節の頭に `\jump Segno` など | voice1 にだけ書く。書き方と限りは下の「D.S. とコーダ」 |
+
+## D.S. とコーダ
+
+飛び先（目印）と飛ぶところを、どちらも小節の頭に `\jump 名前` で書く（voice1 だけ）。飛ぶところは、**その小節を弾き終えてから飛ぶ小節**に付ける。
+
+| 原本 | `\jump` | 付ける小節 |
+|---|---|---|
+| 𝄋 / 𝄋𝄋 | `Segno` / `SegnoSegno` | 戻り先 |
+| Coda / Double Coda | `Coda` / `DoubleCoda` | 飛び先 |
+| To Coda / To Double Coda | `DaCoda` / `DaDoubleCoda` | 飛ぶ前の小節 |
+| D.S. al Coda | `DalSegnoAlCoda`（𝄋𝄋 へ戻るなら `DalSegnoSegnoAlCoda`） | 戻る前の小節 |
+| D.S. al Double Coda | `DalSegnoAlDoubleCoda` / `DalSegnoSegnoAlDoubleCoda` | 同上 |
+| D.S. al Fine / Fine | `DalSegnoAlFine` / `Fine` | 同上 / 終わる小節 |
+| D.C. al Coda など | `DaCapoAlCoda` / `DaCapoAlDoubleCoda` / `DaCapoAlFine` / `DaCapo` | 戻る前の小節 |
+
+- alphaTab（flubato も同じ）の再生の決まり
+  - D.S. / D.C. は、弾いて通るたびに飛ぶ。1つの D.S. を通るのが1回なら問題にならない
+  - D.S. al Coda で戻ったあとは、`DaCoda` の小節から、その先で一番近い `Coda` へ飛ぶ。al Double Coda なら `DaDoubleCoda` から `DoubleCoda` へ。戻る前（1回目）に通る `DaCoda` では飛ばない
+  - 戻り先は、D.S. の小節から後ろ向きに一番近い `Segno`（`SegnoSegno`）
+- **書ける種類はセーニョ2種類・コーダ2種類まで。** 原本の D.S. が3つ以上で飛び先が足りなければ、どれか1つの戻りを展開する（戻る先の小節を D.S. の小節の後ろに書き写し、記号は付けない）。展開した分だけ、その後ろの小節番号が原本とずれる
+  - にびいろの風: D.S.1（𝄋 → To Coda 1 → Coda 1）と D.S.2（𝄋𝄋 → To Coda 2 → Coda 2）を記号にし、D.S.3（𝄋 → To Coda 3 → Coda 3）は m2〜m17 を書き写した。m17 の同じ To Coda から、D.S.1 では Coda 1、D.S.3 では Coda 3 へ行くので、この2つは別の種類のコーダにするしかない。D.S.2 の To Coda 2 はさらに別の飛び先が要るため、3つ目の種類が足りなくなる
+- 書き写した小節の頭にタイ（`-.弦`）があれば、直前の小節（D.S. の小節）の音につながってしまう。原本が「戻ったら弾き直す」なら普通の音に直す。記号で戻る小節の頭のタイは直せない（1回目のタイを残すと、戻ったときも弾かない音になる）ので、報告に書く
+- 書いたら `node $T/order.mjs song.atex` で再生の順を出し、原本の D.S. の流れと合わせる（例 `170 bars: 1-56 → 2-17 → 57-92 → 37-55 → 93-135`）
 
 ## 記号の対応表
 
@@ -229,6 +255,7 @@ node $T/render.mjs song.atex 2400
 | c（アップチョーキング）/ D（ダウン） | 普通の音 + `// ? c` | **未確定。** 凡例ではチョーキングだが、上げ幅も五線の音高の変化も書いていない |
 | ras. / Tras.（矢印付きの波線） | 拍に `{bd}` + コメント | 推定。凡例ではラスゲアード（Tras. は親指） |
 | 1x / 2x の括弧 | 書かれた順に書き、コメント | 何回目に弾くかの指定。alphaTex の反復にはしていない |
+| %1,3 / To ⊕1,3 / D.S.1 / ⊕Coda 1 のような番号付きの D.S. | `\jump`（上の「D.S. とコーダ」） | 確定。番号は何回目の D.S. かを表す。「%1,3」は D.S.1 と D.S.3 の戻り先 |
 
 ### 手書き譜
 
@@ -249,7 +276,7 @@ node $T/render.mjs song.atex 2400
 | 連桁の上の X / X の付いた符尾 | 書かない（コメント） | 未確定。ゴルペ（胴を叩く）か |
 | 「g」「g.」 | `{sl}` | 推定（グリッサンド） |
 | K に似た記号、H.C、M、A、四角で囲んだフレット番号 | コメント | 未確定 |
-| D.S. / Coda / セーニョ | コメント | alphaTex の記号にはまだしていない。再生は書かれた順に流れる |
+| D.S. / Coda / セーニョ | `\jump`（上の「D.S. とコーダ」） | 手書き譜ではまだ試していない |
 | `4:29` のような時刻 | コメント | 原曲の経過時間のメモ |
 
 ## 分かっている落とし穴
