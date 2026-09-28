@@ -25,13 +25,14 @@ export class View {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  layout(stringCount) {
+  layout(stringCount, voiced = false) {
     // 背の高い画面で弦の間隔を広げすぎると、目を上下に大きく動かすことになる。
     // 間隔に上限を付けて、レーンを縦の真ん中に置く
-    const gap = Math.max(18, Math.min(54, (this.h - 34 - RHYTHM_H - 40) / stringCount));
+    const upH = voiced ? RHYTHM_H : 0; // 声部が2つある曲は、上にも上の声部の符尾の段
+    const gap = Math.max(18, Math.min(54, (this.h - 34 - upH - RHYTHM_H - 40) / stringCount));
     const lanesH = gap * stringCount;
-    const top = Math.max(0, (this.h - (34 + lanesH + RHYTHM_H + 20)) / 2); // 下にリズム（符尾・連桁）の段
-    const laneTop = top + 34;
+    const top = Math.max(0, (this.h - (34 + upH + lanesH + RHYTHM_H + 20)) / 2); // 下にリズム（符尾・連桁）の段
+    const laneTop = top + 34 + upH;
     const lanes = [];
     for (let i = 0; i < stringCount; i++) lanes.push(laneTop + gap * (i + 0.5));
     return { top, bottom: laneTop + lanesH + RHYTHM_H + 6, lanes, gap, hitX: this.w < 600 ? 90 : Math.max(120, this.w * 0.22), noteH: Math.min(36, gap * 0.74) };
@@ -47,7 +48,7 @@ export class View {
    */
   draw(chart, judge, song, now, opts = {}) {
     const g = this.ctx, W = this.w, H = this.h;
-    const L = this.layout(chart.stringCount);
+    const L = this.layout(chart.stringCount, chart.voiced);
     g.clearRect(0, 0, W, H);
     g.fillStyle = BG;
     g.fillRect(0, 0, W, H);
@@ -92,7 +93,7 @@ export class View {
       g.fillStyle = 'rgba(255,255,255,0.32)';
       g.fillRect(x - 1, yTop - 10, 2, yBot - yTop + 10);
       g.fillStyle = 'rgba(236,238,243,0.45)';
-      g.fillText(String(bar.number), x + 6, yTop - 12);
+      g.fillText(String(bar.number), x + 6, yTop - 12 - (chart.voiced ? RHYTHM_H : 0));
     }
 
     // 弦（低い弦ほど太く）
@@ -104,7 +105,13 @@ export class View {
 
     // リズム（見えている小節ぶん。連符の数字の区切りが画面の端でずれないように小節ごと）
     const visBars = new Set(chart.bars.map((b, i) => (b.end >= tMin && b.t <= tMax ? i : -1)).filter(i => i >= 0));
-    drawRhythm(g, chart, chart.rhythm.filter(r => visBars.has(r.bar)), r => xOf(r.t), yBot - 4, 'rgba(236,238,243,0.4)');
+    // 符尾は音符の上下の端から（音符は後から重ねて描く）
+    const stemFrom = r => {
+      if (!r.strings.length) return undefined;
+      const s = r.up ? Math.min(...r.strings) : Math.max(...r.strings);
+      return L.lanes[s - 1] + (r.up ? -1 : 1) * L.noteH / 2;
+    };
+    drawRhythm(g, chart, chart.rhythm.filter(r => visBars.has(r.bar)), r => xOf(r.t), { L: yBot - 4, T: yTop + 4, stemFrom }, 'rgba(236,238,243,0.4)');
 
     // 和音のつなぎ線
     for (const grp of chart.groups) {

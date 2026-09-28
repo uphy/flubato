@@ -34,7 +34,7 @@ export function guitarTracks(score) {
  * 譜面を作る。
  * notes: { id, t, dur, string(1=1弦), fret, midi, kind('normal'|'dead'|'harmonic'|'legato'), grace, staccato, group, bar }
  *   grace: 装飾音なら { slot }。slot は本音符までに挟まる装飾音の数（0 = 本音符の直前）
- * bars:  { t, index(0始まり), number(表示用) } を再生順に
+ * bars:  { t, index(0始まり), number(表示用), voiced（符尾を上下に分ける） } を再生順に
  * group: 同時に弾く音のまとまり（和音）。groups[g] = { t, noteIds, bar, grace（装飾音だけの和音なら true） }
  */
 export function buildChart(score, trackIndex) {
@@ -73,7 +73,7 @@ export function buildChart(score, trackIndex) {
   const groups = [];
   const bars = [];
   const beats = []; // メトロノーム用 { t, first }
-  const rawRhythm = []; // 譜面にリズムを描くための拍（休符も） { bar, tick, t, duration, dots, tuplet, rest }
+  const rawRhythm = []; // 譜面にリズムを描くための拍（休符も） { bar, tick, t, duration, dots, tuplet, rest, voice, strings }
   for (const mb of lookups) {
     bars.push({
       t: tickToSec(mb.start), end: tickToSec(mb.end), index: mb.masterBar.index, number: mb.masterBar.index + 1,
@@ -97,7 +97,8 @@ export function buildChart(score, trackIndex) {
         if (!grace) rawRhythm.push({
           bar: bars.length - 1, tick: item.playbackStart, t: tickToSec(mb.start + item.playbackStart),
           duration: beat.duration, dots: beat.dots, tuplet: beat.hasTuplet ? beat.tupletNumerator : 0,
-          rest: beat.isRest || beat.notes.length === 0,
+          rest: beat.isRest || beat.notes.length === 0, voice: beat.voice.index,
+          strings: beat.notes.filter(n => !n.isTieDestination).map(n => stringCount - n.string + 1), // 符尾を伸ばす先の数字
         });
         if (beat.isRest || beat.notes.length === 0) continue;
         const startTick = mb.start + item.playbackStart;
@@ -145,15 +146,23 @@ export function buildChart(score, trackIndex) {
     slot++;
   }
 
-  // リズム: 小節の中の同じ位置の拍をまとめる。ボイスが複数あるとき（ベースをのばしながらメロディを刻む）は、
-  // いちばん短い音価を出す（弾くタイミングが分かればいい）。どのボイスも休符なら休符
+  // リズム: 音の入っているボイスが2つ以上ある小節（ベースをのばしながらメロディを刻む）は、いちばん若いボイスを
+  // 上向きの符尾（up）、残りを下向きの符尾に分ける。休符しかないボイスは描かない。
+  // 同じ向き・同じ位置の拍はまとめ、いちばん短い音価を出す。どのボイスも休符なら休符
+  const voicesOf = bars.map(() => new Set());
+  for (const r of rawRhythm) if (!r.rest) voicesOf[r.bar].add(r.voice);
+  bars.forEach((b, i) => { b.voiced = voicesOf[i].size >= 2; });
   const rhythm = [];
   for (const r of [...rawRhythm].sort((a, b) => a.bar - b.bar || a.tick - b.tick)) {
-    const prev = rhythm[rhythm.length - 1];
-    if (prev && prev.bar === r.bar && prev.tick === r.tick) {
-      if (prev.rest && !r.rest) Object.assign(prev, { ...r });
-      else if (prev.rest === r.rest && r.duration > prev.duration) Object.assign(prev, { duration: r.duration, dots: r.dots, tuplet: r.tuplet });
-    } else rhythm.push({ ...r });
+    const used = voicesOf[r.bar];
+    if (used.size ? !used.has(r.voice) : r.voice !== 0) continue;
+    const up = bars[r.bar].voiced && r.voice === Math.min(...used);
+    const prev = rhythm.slice(-2).find(x => x.bar === r.bar && x.tick === r.tick && x.up === up);
+    const { voice, ...item } = r;
+    if (!prev) { rhythm.push({ ...item, up, strings: [...r.strings] }); continue; }
+    prev.strings.push(...r.strings);
+    if (prev.rest && !r.rest) Object.assign(prev, { ...item, strings: prev.strings });
+    else if (prev.rest === r.rest && r.duration > prev.duration) Object.assign(prev, { duration: r.duration, dots: r.dots, tuplet: r.tuplet });
   }
 
   const last = bars[bars.length - 1];
@@ -169,7 +178,8 @@ export function buildChart(score, trackIndex) {
     groups: merged,
     bars,
     beats,
-    rhythm,
+    rhythm, // { bar, tick, t, duration, dots, tuplet, rest, up（上向きの符尾）, strings（その拍で数字を書く弦） }
+    voiced: bars.some(b => b.voiced), // 符尾を上下に分ける小節がある
     duration: last ? last.end : 0,
     beatSec: t => {
       let seg = segments[0];

@@ -2,22 +2,37 @@
 // 練習モードの譜面と音ゲーモードのレーンの両方で使う。
 // 符尾だけで符頭は描かない: 2分は短い符尾、4分は符尾、8分より短いものは旗か連桁。付点・連符の数字・休符も。
 // 連桁は拍ごと（8分の6拍子などは付点4分ごと）にまとめる。
+// 符尾は数字のところまで伸ばす（どの数字の長さかを棒でたどれるように）。声部が2つある小節は、
+// 上の声部を段の上に上向きで、下の声部を段の下に下向きで描く（chart.rhythm の up）。
 
 export const RHYTHM_H = 34; // リズムの段の高さ
 
-/** items: chart.rhythm の一部（時刻順）。xOf(item) で横位置。L はいちばん下の弦の y */
-export function drawRhythm(g, chart, items, xOf, L, color = 'rgba(255,255,255,0.5)') {
+/**
+ * items: chart.rhythm の一部（時刻順）。xOf(item) で横位置。
+ * L はいちばん下の弦の y（下向きの符尾の段がこの下に付く）、T はいちばん上の弦の y（上向きの符尾の段がこの上に付く）。
+ * stemFrom(item) は符尾を始める y（数字のすぐ下／上）。undefined なら段の端から
+ */
+export function drawRhythm(g, chart, items, xOf, { L, T = L, stemFrom = () => undefined }, color = 'rgba(255,255,255,0.5)') {
   if (!items.length) return;
-  const y0 = L + 8, y1 = L + 26; // 符尾の上端・下端（連桁の位置）
+  g.save();
+  g.strokeStyle = g.fillStyle = color;
+  g.lineWidth = 1.2;
+  drawSide(g, chart, items.filter(r => !r.up), xOf, L, 1, stemFrom);
+  drawSide(g, chart, items.filter(r => r.up), xOf, T, -1, stemFrom);
+  g.restore();
+}
+
+/** 片方の向きの符尾・連桁。s = 1 で下向き（base の下へ）、-1 で上向き（base の上へ） */
+function drawSide(g, chart, items, xOf, base, s, stemFrom) {
+  if (!items.length) return;
+  const Y = off => base + s * off; // 段の端からの距離 → y
+  const y0 = 8, y1 = 26; // 符尾の段の端側・外側（連桁の位置）
   const beatKey = r => {
     const bar = chart.bars[r.bar];
     const unit = bar.den === 8 && bar.num % 3 === 0 ? 1440 : 3840 / bar.den; // 連桁をまとめる単位（tick）
     return `${r.bar}:${Math.floor(r.tick / unit)}`;
   };
   const flags = d => Math.max(0, Math.log2(d / 4)); // 8分=1, 16分=2 …
-  g.save();
-  g.strokeStyle = g.fillStyle = color;
-  g.lineWidth = 1.2;
 
   // 連桁のまとまり
   const beams = [];
@@ -33,25 +48,27 @@ export function drawRhythm(g, chart, items, xOf, L, color = 'rgba(255,255,255,0.
 
   for (const r of items) {
     const x = xOf(r);
-    if (r.rest) { drawRest(g, x, L, r.duration); continue; }
+    if (r.rest) { drawRest(g, x, Y(16), r.duration); continue; }
+    // 符尾は数字から伸ばす。2分は4分と見分けられるよう、連桁の位置まで届かせずに短く止める
+    const end = r.duration === 2 ? y1 - 10 : y1;
     if (r.duration >= 2) {
-      g.beginPath(); g.moveTo(x, r.duration === 2 ? y0 + 9 : y0); g.lineTo(x, y1); g.stroke();
+      g.beginPath(); g.moveTo(x, stemFrom(r) ?? Y(y0)); g.lineTo(x, Y(end)); g.stroke();
     }
     if (!beamed.has(r)) {
       for (let k = 0; k < flags(r.duration); k++) {
-        g.beginPath(); g.moveTo(x, y1 - k * 5); g.lineTo(x + 6, y1 - 6 - k * 5); g.stroke();
+        g.beginPath(); g.moveTo(x, Y(y1 - k * 5)); g.lineTo(x + 6, Y(y1 - 6 - k * 5)); g.stroke();
       }
     }
-    for (let k = 0; k < r.dots; k++) { g.beginPath(); g.arc(x + 5 + k * 4, y1 - 2, 1.4, 0, Math.PI * 2); g.fill(); }
+    for (let k = 0; k < r.dots; k++) { g.beginPath(); g.arc(x + 5 + k * 4, Y(end - 2), 1.4, 0, Math.PI * 2); g.fill(); }
   }
   // 連桁（16分なら2本目も。隣と組めない16分は短い桁）
   for (const bm of beams) {
     if (bm.items.length < 2) continue;
     const xs = bm.items.map(xOf);
-    g.fillRect(xs[0], y1 - 1.5, xs[xs.length - 1] - xs[0], 3);
+    g.fillRect(xs[0], Y(y1) - 1.5, xs[xs.length - 1] - xs[0], 3);
     const maxLevel = Math.max(...bm.items.map(r => flags(r.duration)));
     for (let lv = 2; lv <= maxLevel; lv++) {
-      const y = y1 - 1.5 - (lv - 1) * 5;
+      const y = Y(y1 - (lv - 1) * 5) - 1.5;
       bm.items.forEach((r, k) => {
         if (flags(r.duration) < lv) return;
         const nxt = bm.items[k + 1], prv = bm.items[k - 1];
@@ -68,15 +85,13 @@ export function drawRhythm(g, chart, items, xOf, L, color = 'rgba(255,255,255,0.
     if (!n) { i++; continue; }
     let j = i;
     while (j < items.length && j - i < n && items[j].tuplet === n && items[j].bar === items[i].bar) j++;
-    g.fillText(String(n), (xOf(items[i]) + xOf(items[j - 1])) / 2, y1 + 9);
+    g.fillText(String(n), (xOf(items[i]) + xOf(items[j - 1])) / 2, Y(y1 + 9));
     i = j;
   }
-  g.restore();
 }
 
-/** 休符（簡略な形）: 全・2分は四角、4分はジグザグ、8分より短いものは斜線と旗の数の点 */
-function drawRest(g, x, L, d) {
-  const y = L + 16;
+/** 休符（簡略な形。y は真ん中）: 全・2分は四角、4分はジグザグ、8分より短いものは斜線と旗の数の点 */
+function drawRest(g, x, y, d) {
   if (d <= 2) { g.fillRect(x - 4, d === 1 ? y - 3 : y, 8, 3); return; }
   if (d === 4) {
     g.beginPath(); g.moveTo(x - 1, y - 7); g.lineTo(x + 3, y - 3); g.lineTo(x - 2, y + 1); g.lineTo(x + 3, y + 6); g.stroke();
