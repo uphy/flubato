@@ -46,7 +46,7 @@ export class FlexClock {
     let rate = this.k;
     let g = this.follower.pos + 1;
     // 装飾音は弾き逃しても待たない（その先の本音符で待つ）
-    while (this.chart.groups[g]?.noteIds.every(id => this.chart.notes[id].grace)) g++;
+    while (this.chart.groups[g]?.grace) g++;
     const grp = this.chart.groups[g];
     // 次の和音の時刻を過ぎたのに、追従器も判定もまだ弾いたと見ていなければ、待つ
     if (grp && song > grp.t && !grp.noteIds.some(id => this.judge.state[id].result === 'hit')) {

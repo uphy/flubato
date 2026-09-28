@@ -35,6 +35,13 @@ export class Follower {
     this.chart = chart;
     this.o = { ...FOLLOW_DEFAULTS, ...opts };
     this.G = chart.groups.length;
+    // p から数えて k 個目の和音（装飾音だけの和音は数えない）。装飾音は本音符とほぼ同時に弾くので、
+    // アタックが1つにまとまりやすい。装飾音を拾えなくても、本音符へ進むのを「飛ばした」にしない
+    this.ahead = (p, k) => {
+      let q = p;
+      while (k > 0 && q < this.G - 1) { q++; if (!chart.groups[q].grace) k--; }
+      return q;
+    };
     // group ごとの小節の頭の group
     this.barStart = new Int32Array(this.G);
     this.prevBarStart = new Int32Array(this.G);
@@ -110,8 +117,8 @@ export class Follower {
     }
     // アタックのない音（ハンマリング・プリング・スライド）は、次の group の音の立ち上がりだけで進める
     if (!this.pending && this.ring.length >= 12 && (this.lastEventT === null || t - this.lastEventT > 0.1)) {
-      const next = this.pos + 1;
-      if (next < this.G && this.chart.groups[next].noteIds.some(id => this.chart.notes[id].kind === 'legato')) {
+      for (const next of new Set([this.pos + 1, this.ahead(this.pos, 1)])) {
+        if (!(next < this.G && this.chart.groups[next].noteIds.some(id => this.chart.notes[id].kind === 'legato'))) continue;
         const pre = this.ring[0].snap;
         this._memo = new Map();
         if (this._match(next, spec, pre, o.legatoRiseDb, false) >= 0.5) return this._event(t, spec, pre, 'legato', this.ring[0].t, t);
@@ -126,7 +133,12 @@ export class Follower {
     const scores = this._noteScores(g, spec, pre, riseDb, allowRinging);
     let sum = 0, wsum = 0;
     scores.forEach((v, k) => { sum += w[k] * v; wsum += w[k]; });
-    return wsum ? sum / wsum : 0;
+    const m = wsum ? sum / wsum : 0;
+    // 装飾音から弾き始めると、答え合わせの時点では本音符がまだ鳴り出していないことがある。
+    // 直前の装飾音が立ち上がっていれば、その本音符を弾いた証拠にする
+    const prev = this.chart.groups[g - 1];
+    if (!prev?.grace || this.chart.groups[g].grace) return m;
+    return Math.max(m, this._match(g - 1, spec, pre, riseDb, allowRinging));
   }
 
   /**
@@ -202,12 +214,14 @@ export class Follower {
     // gap は「p の group に入ってから」の時間。同じところに留まったアタック（二重に拾ったアタック・
     // 鳴らしっぱなしの弦のにごり）から測ると、次の本物の音が早すぎるように見えて迷子になる
     // 次の音までの譜面上の間隔よりずっと長く空いたら、流れが切れた（止まった・戻るつもり）とみて間隔は使わない
-    const p0 = Math.max(0, p), p1 = Math.min(G - 1, p + 1);
+    const p0 = Math.max(0, p), p1 = this.ahead(p0, 1);
     const expectedNext = Math.max(0.05, (groups[p1].t - groups[p0].t) * tempo);
     const timed = gap !== null && p >= 0 && gap < o.hesitateSec * 1.5 && gap < o.breakRatio * expectedNext;
     const out = new Map();
     const add = (q, v) => {
       if (q < 0 || q >= G) return;
+      // 装飾音と本音符はアタックが1つにまとまるので、装飾音のところには留まらず本音符へ
+      if (groups[q].grace) q = this.ahead(q, 1);
       let lik = 1;
       if (timed) {
         // 流れの途中で間を空けずに戻る・同じところをもう一度、は起こりにくい。
@@ -223,9 +237,9 @@ export class Follower {
       }
       out.set(q, (out.get(q) || 0) + v * lik);
     };
-    add(p + 1 < G ? p + 1 : p, o.pNext); // 弾き終わったら、次へ進むぶんは留まるへ
-    add(p + 2, o.pSkip1);
-    add(p + 3, o.pSkip2);
+    add(p + 1 < G ? this.ahead(p, 1) : p, o.pNext); // 弾き終わったら、次へ進むぶんは留まるへ
+    add(this.ahead(p, 2), o.pSkip1);
+    add(this.ahead(p, 3), o.pSkip2);
     add(p, o.pStay);
     const nb = Math.min(G - 1, p + 1);
     add(this.barStart[nb], o.pBarStart);
@@ -286,7 +300,7 @@ export class Follower {
     const p = this.pos, groups = this.chart.groups;
     if (p < 0 || p + 1 >= this.G || this.enteredT == null) return false;
     const gap = t - this.enteredT;
-    const expected = Math.max(0.05, (groups[p + 1].t - groups[p].t) * this.tempo);
+    const expected = Math.max(0.05, (groups[this.ahead(p, 1)].t - groups[p].t) * this.tempo);
     return gap < this.o.hesitateSec && Math.abs(Math.log(gap / expected)) < this.o.onBeatTol;
   }
 
@@ -294,20 +308,26 @@ export class Follower {
     const o = this.o;
     const prev = this.pos;
     const groups = this.chart.groups;
-    if (this.enteredT != null && prev >= 0 && pos === prev + 1) {
+    const next = this.isNext(prev, pos);
+    if (this.enteredT != null && prev >= 0 && next) {
       const gap = t - this.enteredT;
       const scoreGap = Math.max(0.05, groups[pos].t - groups[prev].t);
       if (gap < o.hesitateSec) this.tempo = this.tempo * 0.8 + Math.min(4, Math.max(0.25, gap / scoreGap)) * 0.2;
     }
-    if (pos > prev + 1) for (let g = prev + 1; g < pos; g++) if (!this.played[g]) this.played[g] = 2;
+    if (pos > prev + 1) for (let g = prev + 1; g < pos; g++) if (!this.played[g]) this.played[g] = this.chart.groups[g].grace ? 1 : 2;
     if (pos < prev) for (let g = pos; g <= prev; g++) this.played[g] = 0;
     this.played[pos] = 1;
     this.pos = pos;
     this.conf = conf;
     this.lastEventT = t;
     if (pos !== prev || this.enteredT == null) this.enteredT = t;
-    const kind = pos === prev + 1 ? 'next' : pos === prev ? 'stay' : pos > prev ? 'skip' : 'back';
+    const kind = next ? 'next' : pos === prev ? 'stay' : pos > prev ? 'skip' : 'back';
     return { t, pos, prev, conf, kind };
+  }
+
+  /** prev の次を弾いたか（あいだの装飾音を飛ばしただけなら、次とみなす） */
+  isNext(prev, pos) {
+    return pos > prev && pos <= this.ahead(prev, 1);
   }
 
   /**
@@ -350,7 +370,7 @@ export class Follower {
     const pl = new Uint8Array(this.G);
     let prev = this.startPos;
     for (const { pos } of this.path()) {
-      for (let g = prev + 1; g < pos; g++) if (!pl[g]) pl[g] = 2;
+      for (let g = prev + 1; g < pos; g++) if (!pl[g]) pl[g] = this.chart.groups[g].grace ? 1 : 2;
       pl[pos] = 1;
       prev = pos;
     }
@@ -371,11 +391,12 @@ export class Follower {
     for (const { t, pos } of this.path()) {
       const gap = lastT === null ? null : t - lastT;
       if (gap !== null && prev >= 0) {
-        const scoreGap = Math.max(0.05, groups[Math.min(this.G - 1, prev + 1)].t - groups[prev].t);
-        if (pos === prev + 1 && gap < o.hesitateSec) tempo = tempo * 0.8 + Math.min(4, Math.max(0.25, gap / scoreGap)) * 0.2;
+        const scoreGap = Math.max(0.05, groups[this.ahead(prev, 1)].t - groups[prev].t);
+        if (this.isNext(prev, pos) && gap < o.hesitateSec) tempo = tempo * 0.8 + Math.min(4, Math.max(0.25, gap / scoreGap)) * 0.2;
         if (pos >= prev && gap > Math.max(o.hesitateSec, o.hesitateRatio * scoreGap * tempo)) bump(barOf(pos), 'hesitate');
       }
-      if (pos > prev + 1) bump(barOf(prev + 1), 'skip', pos - prev - 1);
+      const skipped = groups.slice(prev + 1, Math.max(prev + 1, pos)).filter(g => !g.grace).length;
+      if (skipped) bump(barOf(prev + 1), 'skip', skipped);
       if (pos < prev) bump(barOf(pos), 'back');
       prev = pos; lastT = t;
     }

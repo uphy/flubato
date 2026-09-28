@@ -35,7 +35,7 @@ export function guitarTracks(score) {
  * notes: { id, t, dur, string(1=1弦), fret, midi, kind('normal'|'dead'|'harmonic'|'legato'), grace, group, bar }
  *   grace: 装飾音なら { slot }。slot は本音符までに挟まる装飾音の数（0 = 本音符の直前）
  * bars:  { t, index(0始まり), number(表示用) } を再生順に
- * group: 同時に弾く音のまとまり（和音）。groups[g] = { t, noteIds }
+ * group: 同時に弾く音のまとまり（和音）。groups[g] = { t, noteIds, bar, grace（装飾音だけの和音なら true） }
  */
 export function buildChart(score, trackIndex) {
   const settings = new at.Settings();
@@ -132,6 +132,7 @@ export function buildChart(score, trackIndex) {
     else merged.push({ t: g.t, noteIds: [...g.noteIds], bar: g.bar });
   }
   merged.forEach((g, i) => g.noteIds.forEach(id => { notes[id].group = i; }));
+  merged.forEach(g => { g.grace = g.noteIds.every(id => notes[id].grace); });
   // 装飾音が続くとき、本音符から数えて何番目か（描くときに左へずらして並べる）
   for (let i = merged.length - 1, slot = 0; i >= 0; i--) {
     const graces = merged[i].noteIds.filter(id => notes[id].grace);

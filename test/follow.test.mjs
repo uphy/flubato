@@ -79,3 +79,23 @@ test('部屋の響きと雑音があっても（中くらいまで）ついて�
     assert.equal(r.final, last(chart));
   }
 });
+
+// 装飾音は本音符とほぼ同時で、弾いても拾えないことが多い。拾えなくても「飛ばした」にしない
+const graced = buildChart(scoreFromAlphaTex(`\\tempo 80 . \\track "G" \\staff {tabs} \\tuning e4 b3 g3 d3 a2 e2
+0.3.4 2.3.4 {gr} 4.3.4 5.3.4 0.2.4 | 1.2.4 {gr} 3.2.4 5.2.4 0.1.4 3.1.4 {gr} 5.1.4 | 3.2.4 1.2.4 {gr} 0.2.4 5.3.2 | 0.3.1`), 0);
+const graceGroups = graced.groups.flatMap((g, i) => (g.grace ? [i] : []));
+
+for (const [name, script] of Object.entries({ '装飾音も弾く': {}, '装飾音を弾かない': { skip: new Set(graceGroups) } })) {
+  test(`装飾音: ${name}`, () => {
+    assert.equal(graceGroups.length, 4);
+    const perf = perform(graced, script);
+    const r = follow(graced, perf);
+    const played = r.follower.playedFromPath();
+    assert.equal(r.final, last(graced));
+    // 装飾音を弾いたあとは、もう本音符の位置にいてよい（アタックが1つにまとまる）。本音符だけで見る
+    const mains = perf.steps.filter(s => !graced.groups[s.g].grace);
+    assert.ok(mains.every(s => r.posAt(s.t + 0.2) === s.g), mains.map(s => `${s.g}→${r.posAt(s.t + 0.2)}`).join(' '));
+    assert.ok(!played.includes(2), `飛ばした: ${[...played]}`);
+    assert.deepEqual(r.follower.stumbles().filter(s => s.skip), []);
+  });
+}
