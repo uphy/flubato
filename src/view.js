@@ -28,14 +28,21 @@ export class View {
   layout(stringCount, voiced = false) {
     // 背の高い画面で弦の間隔を広げすぎると、目を上下に大きく動かすことになる。
     // 間隔に上限を付けて、レーンを縦の真ん中に置く
+    // スマホの縦持ち（幅が狭い）では、横に流れる時間が足りない。弦を詰めて判定ラインを左に寄せ、
+    // 流れる速さを落として先まで見せる（音符の間隔の設定はこの速さに掛かる）
+    const narrow = this.w < 600;
     const upH = voiced ? RHYTHM_H : 0; // 声部が2つある曲は、上にも上の声部の符尾の段
-    const gap = Math.max(18, Math.min(54, (this.h - 34 - upH - RHYTHM_H - 40) / stringCount));
+    const gap = Math.max(18, Math.min(narrow ? 30 : 54, (this.h - 34 - upH - RHYTHM_H - 40) / stringCount));
     const lanesH = gap * stringCount;
     const top = Math.max(0, (this.h - (34 + upH + lanesH + RHYTHM_H + 20)) / 2); // 下にリズム（符尾・連桁）の段
     const laneTop = top + 34 + upH;
     const lanes = [];
     for (let i = 0; i < stringCount; i++) lanes.push(laneTop + gap * (i + 0.5));
-    return { top, bottom: laneTop + lanesH + RHYTHM_H + 6, lanes, gap, hitX: this.w < 600 ? 90 : Math.max(120, this.w * 0.22), noteH: Math.min(36, gap * 0.74) };
+    return {
+      top, bottom: laneTop + lanesH + RHYTHM_H + 6, lanes, gap,
+      hitX: narrow ? 66 : Math.max(120, this.w * 0.22), noteH: Math.min(36, gap * 0.74),
+      pps: this.pps * (narrow ? 0.6 : 1), // 1秒あたりのピクセル
+    };
   }
 
   hitFx(note, L, now) {
@@ -52,9 +59,16 @@ export class View {
     g.clearRect(0, 0, W, H);
     g.fillStyle = BG;
     g.fillRect(0, 0, W, H);
-    const xOf = t => L.hitX + (t - song) * this.pps;
-    const nh = L.noteH, nw = Math.max(nh * 1.2, 28); // 音符の高さと幅
-    const tMin = song - L.hitX / this.pps - 0.5, tMax = song + (W - L.hitX) / this.pps + 0.5;
+    const xOf = t => L.hitX + (t - song) * L.pps;
+    const nh = L.noteH, nw = Math.max(nh * 1.2, 24); // 音符の高さと幅
+    const tMin = song - L.hitX / L.pps - 0.5, tMax = song + (W - L.hitX) / L.pps + 0.5;
+    // 装飾音は本音符とほとんど同じ時刻なので、そのまま置くと本音符の箱に重なって隠してしまう。
+    // 小さく描いて本音符の左に並べる（和音のつなぎ線もこの位置に引く）
+    const gh = nh * 0.62, gw = Math.max(gh * 1.2, 18);
+    const graceX = n => {
+      const main = chart.groups[n.group + n.grace.slot + 1];
+      return main ? Math.min(xOf(n.t), xOf(main.t) - nw / 2 - gw / 2 - 3 - n.grace.slot * (gw + 3)) : xOf(n.t);
+    };
     const yTop = L.lanes[0] - L.gap / 2, yBot = L.lanes[L.lanes.length - 1] + L.gap / 2;
 
     // レーンの地（弦ごとに薄く交互）
@@ -72,7 +86,7 @@ export class View {
 
     // 判定の窓（この幅のうちに弾けば当たり）
     if (judge) {
-      const a = L.hitX - judge.o.late * this.pps, b = L.hitX + judge.o.early * this.pps;
+      const a = L.hitX - judge.o.late * L.pps, b = L.hitX + judge.o.early * L.pps;
       const grad = g.createLinearGradient(a, 0, b, 0);
       grad.addColorStop(0, 'rgba(255,210,74,0)'); grad.addColorStop(0.5, 'rgba(255,210,74,0.07)'); grad.addColorStop(1, 'rgba(255,210,74,0)');
       g.fillStyle = grad; g.fillRect(a, yTop, b - a, yBot - yTop);
@@ -116,10 +130,10 @@ export class View {
     // 和音のつなぎ線。声部ごとに引く（メロディと低音をつなぐと、1つの和音に見える）
     for (const grp of chart.groups) {
       if (grp.t < tMin || grp.t > tMax || grp.noteIds.length < 2) continue;
-      const x = xOf(grp.t);
-      g.strokeStyle = 'rgba(255,255,255,0.28)';
-      g.lineWidth = 2;
       const ns = grp.noteIds.map(id => chart.notes[id]);
+      const x = grp.grace ? graceX(ns[0]) : xOf(grp.t);
+      g.strokeStyle = 'rgba(255,255,255,0.28)';
+      g.lineWidth = grp.grace ? 1.5 : 2;
       for (const v of new Set(ns.map(n => n.voice))) {
         const ys = ns.filter(n => n.voice === v).map(n => L.lanes[n.string - 1]);
         if (ys.length < 2) continue;
@@ -130,25 +144,19 @@ export class View {
     // 音符（後ろから描く）
     g.font = `700 ${Math.round(nh * 0.62)}px ${FONT}`;
     g.textAlign = 'center';
-    // 装飾音は本音符とほとんど同じ時刻なので、そのまま置くと本音符の箱に重なって隠してしまう。
-    // 小さく描いて本音符の左に並べ、本音符をあとから（上に）描く
-    const gh = nh * 0.62, gw = Math.max(gh * 1.2, 18);
+    // 装飾音を先に、本音符をあとから（上に）描く
     const drawNote = (i, n) => {
       const st = judge?.state[i];
       const res = st?.result;
       if (res === 'skip') return;
       const color = STRING_COLORS[n.string - 1];
-      let x = xOf(n.t), y = L.lanes[n.string - 1];
-      if (n.grace) {
-        const main = chart.groups[n.group + n.grace.slot + 1];
-        if (main) x = Math.min(x, xOf(main.t) - nw / 2 - gw / 2 - 3 - n.grace.slot * (gw + 3));
-        drawGrace(g, n, res, x, y, gw, gh, color, song);
-        return;
-      }
+      const y = L.lanes[n.string - 1];
+      if (n.grace) { drawGrace(g, n, res, graceX(n), y, gw, gh, color, song); return; }
+      const x = xOf(n.t);
       // のばし
       if (n.dur > 0.3) {
         g.fillStyle = res === 'miss' ? 'rgba(120,120,130,0.3)' : color + '40';
-        roundRect(g, x, y - 3, n.dur * this.pps, 6, 3); g.fill();
+        roundRect(g, x, y - 3, n.dur * L.pps, 6, 3); g.fill();
       }
       let alpha = 1;
       if (res === 'hit') alpha = Math.max(0, 1 - (song - n.t) * 2.5);
@@ -164,7 +172,15 @@ export class View {
       g.fillText(label, x, y + 1);
       if (n.kind === 'legato') {
         g.strokeStyle = '#ffffffaa'; g.lineWidth = 1.5;
-        g.beginPath(); g.arc(x - nw / 2 - 2, y - nh / 2 - 2, 5, Math.PI, 1.5 * Math.PI); g.stroke();
+        // 同じ弦の装飾音からのハンマリング・スライドは、装飾音から本音符へ弧を渡す
+        const from = n.group > 0 && chart.groups[n.group - 1].grace
+          && chart.groups[n.group - 1].noteIds.map(id => chart.notes[id]).find(o => o.string === n.string);
+        g.beginPath();
+        if (from) {
+          const x0 = graceX(from), y0 = y - Math.max(gh, nh) / 2 - 2;
+          g.moveTo(x0, y - gh / 2 - 2); g.quadraticCurveTo((x0 + x) / 2, y0 - 10, x - nw / 4, y - nh / 2 - 2);
+        } else g.arc(x - nw / 2 - 2, y - nh / 2 - 2, 5, Math.PI, 1.5 * Math.PI);
+        g.stroke();
       }
       g.globalAlpha = 1;
     };
@@ -270,8 +286,8 @@ function drawGrace(g, n, res, x, y, w, h, color, song) {
   g.fill();
   g.fillStyle = res === 'hit' ? color : '#10121a';
   g.fillText(n.kind === 'dead' ? '×' : n.kind === 'harmonic' ? `<${n.fret}>` : String(n.fret), x, y + 1);
-  // 装飾音の印（音符に斜線）
+  // 装飾音の印（左上の角に斜線）。右上に付けると本音符とのすき間に出て、本音符に隠れたり弧と重なったりする
   g.strokeStyle = '#ffffffcc'; g.lineWidth = 1.5;
-  g.beginPath(); g.moveTo(x + w / 2 - 5, y - h / 2 - 5); g.lineTo(x + w / 2 + 3, y - h / 2 + 3); g.stroke();
+  g.beginPath(); g.moveTo(x - w / 2 - 4, y - h / 2 + 4); g.lineTo(x - w / 2 + 4, y - h / 2 - 4); g.stroke();
   g.globalAlpha = 1;
 }
