@@ -10,6 +10,7 @@ const SIG_W = 26; // 拍子記号のぶんの幅
 const LEGATO_TAGS = { h: 'H', p: 'P', s: 'S' }; // レガートの弧に添える文字（日本の市販譜と同じ大文字）
 const STROKE_W = 0.6; // ストロークの矢印のぶんの幅（和音1つぶんの間隔に対する割合）
 const FONT = '-apple-system, system-ui, "Helvetica Neue", sans-serif';
+const SERIF = '"Times New Roman", Times, Georgia, "Noto Serif", serif'; // D.S.・コーダの言葉
 // 色（index.html の CSS と合わせる）
 const C = {
   bg: '#0e1016', ink: '#eceef3', played: 'rgba(236,238,243,0.28)', faint: 'rgba(236,238,243,0.38)', clef: 'rgba(236,238,243,0.3)',
@@ -679,17 +680,29 @@ function bendLabel(semis) {
  */
 export function drawDirections(g, bar, jumpTo, xStart, xEnd, y, px, color) {
   const { start } = bar.directions;
-  const end = [...bar.directions.end];
-  if (jumpTo != null && end.length > 0) end[end.length - 1] += ` → ${jumpTo}`;
+  const { end } = bar.directions;
   if (start.length === 0 && end.length === 0) return;
   g.save();
   g.fillStyle = color; g.strokeStyle = color;
-  g.font = `700 ${px}px ${FONT}`;
+  // 楽譜の慣例どおり、D.S. al Coda・To Coda などの言葉は斜体のセリフ体で書く（端末に入っている書体を使い、読み込まない）
+  g.font = `italic 600 ${Math.round(px * 1.15)}px ${SERIF}`;
   g.textBaseline = 'alphabetic';
   let x = xStart;
   for (const s of start) x = drawTarget(g, s, x, y, px) + px * 0.5;
-  g.textAlign = 'right';
-  if (end.length) g.fillText(end.join(' '), xEnd, y);
+  if (end.length) {
+    // 飛び先の番号（→ 57）は譜面の小節番号と同じ書体で、言葉の右に足す
+    let right = xEnd;
+    g.textAlign = 'right';
+    if (jumpTo != null) {
+      const font = g.font;
+      g.font = `700 ${px}px ${FONT}`;
+      const tail = `→ ${jumpTo}`;
+      g.fillText(tail, right, y);
+      right -= g.measureText(tail).width + px * 0.4;
+      g.font = font;
+    }
+    g.fillText(end.join(' '), right, y);
+  }
   g.restore();
 }
 
