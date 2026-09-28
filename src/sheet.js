@@ -693,37 +693,31 @@ export function drawDirections(g, bar, jumpTo, xStart, xEnd, y, px, color) {
   g.restore();
 }
 
+// 𝄋（セーニョ）と 𝄌（コーダ）の形。alphaTab に入っている楽譜フォント Bravura（SIL Open Font License）の字形の輪郭を、
+// そのまま Path2D で描く。単位は 1000 = 1em、y は上向き。[輪郭, 字の幅]
+const SEGNO = ['M20 477c-11 25 -16 50 -16 74c0 99 79 185 149 185c51 0 118 -17 134 -63c5 -16 8 -32 8 -47c0 -43 -28 -67 -69 -67c-51 0 -66 59 -73 86l-2 7c-3 11 -10 13 -16 13h-6c-42 -7 -54 -35 -54 -62c0 -21 8 -42 14 -53c26 -45 177 -103 186 -106c4 -2 7 -3 10 -3 c4 0 6 3 9 8c6 9 165 296 165 296c5 9 15 14 25 14c15 0 28 -12 28 -28c0 -5 -1 -9 -4 -14c0 0 -155 -279 -160 -287c-1 -2 -2 -4 -2 -6c0 -5 5 -9 17 -16c12 -6 170 -95 185 -205c1 -10 2 -20 2 -29c0 -83 -53 -148 -133 -175c-15 -5 -29 -7 -42 -7c-59 0 -121 53 -121 114 c0 40 34 56 71 65c4 1 8 2 12 2c28 0 53 -28 53 -66v-11c0 -31 17 -45 36 -45c2 0 5 1 7 1c32 5 56 31 56 70c0 95 -200 154 -215 157c-4 0 -12 -6 -12 -5c-3 -6 -158 -286 -158 -286c-5 -9 -15 -15 -25 -15c-16 0 -28 13 -28 29c0 4 1 9 3 13c0 0 144 259 151 273 c4 7 6 12 6 16s-2 6 -6 8c-8 3 -153 92 -185 165zM472 409c-31 0 -57 26 -57 57c0 32 26 57 57 57c32 0 57 -25 57 -57c0 -31 -25 -57 -57 -57zM83 207c-31 0 -57 25 -57 57c0 31 26 57 57 57c32 0 57 -26 57 -57c0 -32 -25 -57 -57 -57z', 557];
+const CODA = ['M-4 376c0 13 4 24 18 24h132c11 189 150 339 312 352v129c0 13 11 17 24 17s24 -4 24 -17v-129c162 -13 302 -164 312 -352h119c14 0 18 -11 18 -24s-4 -24 -18 -24h-119c-10 -187 -150 -339 -312 -352v-140c0 -14 -11 -18 -24 -18s-24 4 -24 18v140 c-162 13 -301 165 -312 352h-132c-14 0 -18 11 -18 24zM653 400c0 162 -7 284 -147 296v-296h147zM506 352v-304c125 15 144 151 147 304h-147zM316 400h142v296c-142 -12 -142 -134 -142 -296zM458 352h-142c1 -154 13 -289 142 -304v304z', 954];
+let glyphPaths = null; // Path2D は描くときに作る（テストの node には無い）
+
 /** 目印の記号を x（左端）から描き、右端の x を返す。y は文字の並びの下（ベースライン） */
 function drawTarget(g, kind, x, y, px) {
-  const h = px * 1.1; // 記号の高さ
-  const cy = y - h / 2 + px * 0.05;
-  g.lineWidth = Math.max(1.2, px * 0.11);
   g.textAlign = 'left';
   if (kind === 'fine') { g.fillText('Fine', x, y); return x + g.measureText('Fine').width; }
+  glyphPaths ??= { segno: new Path2D(SEGNO[0]), coda: new Path2D(CODA[0]) };
+  const [path, adv] = kind.startsWith('segno') ? [glyphPaths.segno, SEGNO[1]] : [glyphPaths.coda, CODA[1]];
+  const scale = (px * 1.25) / 1000; // 字の高さが文字より少し大きくなるように
   const count = kind.endsWith('2') ? 2 : 1;
-  const w = kind.startsWith('segno') ? h * 0.62 : h;
   for (let i = 0; i < count; i++) {
-    const cx = x + w / 2;
-    if (kind.startsWith('segno')) {
-      // S の字に斜線、左下と右上に点
-      g.font = `italic 700 ${Math.round(h * 1.05)}px Georgia, "Times New Roman", serif`;
-      g.textAlign = 'center';
-      g.fillText('S', cx, y + px * 0.08);
-      g.beginPath(); g.moveTo(cx - w * 0.55, y + px * 0.05); g.lineTo(cx + w * 0.55, y - h + px * 0.05); g.stroke();
-      for (const [dx, dy] of [[-0.45, -0.3], [0.45, 0.3]]) {
-        g.beginPath(); g.arc(cx + dx * w, cy + dy * h, Math.max(1.3, px * 0.1), 0, Math.PI * 2); g.fill();
-      }
-    } else {
-      // 楕円に十字
-      g.beginPath(); g.ellipse(cx, cy, w * 0.3, h * 0.36, 0, 0, Math.PI * 2); g.stroke();
-      g.beginPath(); g.moveTo(cx, cy - h * 0.55); g.lineTo(cx, cy + h * 0.55); g.moveTo(cx - w * 0.5, cy); g.lineTo(cx + w * 0.5, cy); g.stroke();
-    }
-    x += w + px * 0.15;
+    g.save();
+    g.translate(x, y + px * 0.12);
+    g.scale(scale, -scale);
+    g.fill(path);
+    g.restore();
+    x += adv * scale + px * 0.1;
   }
   if (kind.startsWith('coda')) {
-    g.font = `700 ${px}px ${FONT}`; g.textAlign = 'left';
-    g.fillText('Coda', x + px * 0.1, y);
-    x += px * 0.1 + g.measureText('Coda').width;
+    g.fillText('Coda', x + px * 0.15, y);
+    x += px * 0.15 + g.measureText('Coda').width;
   }
   return x;
 }
