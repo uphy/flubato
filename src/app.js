@@ -1164,6 +1164,7 @@ $('demo-speed').addEventListener('change', () => {
 $('speed').addEventListener('input', syncSpeedLabel);
 $('zoom').addEventListener('input', e => { view.pps = Number(e.target.value); store.set('zoom', view.pps); syncRange(e.target); });
 $('sheet-scale').addEventListener('input', e => { sheet.scale = Number(e.target.value) / 100; store.set('sheetScale', sheet.scale); syncSheetScale(); });
+$('sheet-spacing').addEventListener('change', e => { sheet.spacing = e.target.value; store.set('sheetSpacing', sheet.spacing); });
 $('settings-btn').addEventListener('click', openSettings);
 $('tuner-btn').addEventListener('click', openTuner);
 $('setup-btn').addEventListener('click', openTuner);
@@ -1378,6 +1379,7 @@ $('check-update').addEventListener('click', () => { $('update-state').textConten
 
 view.pps = store.get('zoom', 240); $('zoom').value = String(view.pps); syncRange($('zoom'));
 sheet.scale = store.get('sheetScale', 1); $('sheet-scale').value = String(Math.round(sheet.scale * 100)); syncSheetScale();
+sheet.spacing = store.get('sheetSpacing', 'normal'); $('sheet-spacing').value = sheet.spacing;
 $('strict').value = store.get('strict', 'normal');
 $('game-view').value = S.gameView;
 $('demo-speed').value = String(store.get('demoSpeed', 100));

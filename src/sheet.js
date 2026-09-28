@@ -9,6 +9,8 @@ const CLEF_W = 30; // 段の頭の TAB の記号のぶん
 const SIG_W = 26; // 拍子記号のぶんの幅
 const LEGATO_TAGS = { h: 'H', p: 'P', s: 'S' }; // レガートの弧に添える文字（日本の市販譜と同じ大文字）
 const STROKE_W = 0.6; // ストロークの矢印のぶんの幅（和音1つぶんの間隔に対する割合）
+// 和音どうしの間隔の最小（px。「譜面の大きさ」の倍率を掛ける）。狭い画面でも、これより詰めては並べない
+export const MIN_GAP_PX = { narrow: 22, normal: 36, wide: 46 };
 const FONT = '-apple-system, system-ui, "Helvetica Neue", sans-serif';
 const SERIF = '"Times New Roman", Times, Georgia, "Noto Serif", serif'; // D.S.・コーダの言葉
 // 色（index.html の CSS と合わせる）
@@ -32,6 +34,7 @@ export class SheetView {
     this.target = 0; this.maxScroll = 0; this.rowH = 0;
     this.hits = []; // クリック判定用 { x0, x1, y0, y1, bar }
     this.scale = 1; // 利用者が選んだ大きさ（設定の「譜面の大きさ」）
+    this.spacing = 'normal'; // 和音どうしの間隔の最小（設定の「和音の間隔」。MIN_GAP_PX のキー）
     this.resize();
   }
 
@@ -51,7 +54,7 @@ export class SheetView {
   /** 小節を段に割り付ける（幅は中の和音の数で決める） */
   _layout(chart) {
     const k = this.k;
-    if (this._rowsFor === chart && this._w === this.w && this._k === k) return this.rows;
+    if (this._rowsFor === chart && this._w === this.w && this._k === k && this._spacing === this.spacing) return this.rows;
     // 狭い画面では、和音どうしの間隔をさらに詰める（数字の大きさのわりに、広い画面の間隔は余白が多い）
     const gx = k * (this.w < 600 ? 0.7 : 1);
     // 横に広い画面でも1段が長くなりすぎないよう、幅に上限を付けて真ん中に置く。左端は TAB の記号のぶん空ける
@@ -62,6 +65,8 @@ export class SheetView {
     // 時間に比例させると、休符のあとに短い音が続く小節で数字が右端に詰まって重なる
     this.barPos = new Map();
     const perBar = new Map();
+    const minW = new Map(); // 間隔の最小を守るのに要る小節の中の幅
+    const minGap = (MIN_GAP_PX[this.spacing] ?? MIN_GAP_PX.normal) * this.scale;
     chart.bars.forEach((bar, i) => {
       const ts = [...new Set([...chart.rhythm.filter(r => r.bar === i).map(r => r.t), ...chart.groups.filter(g => g.bar === i).map(g => g.t)])].sort((a, b) => a - b);
       if (!ts.length) { perBar.set(i, 1); return; }
@@ -74,6 +79,8 @@ export class SheetView {
       let acc = lead;
       this.barPos.set(i, { ts, fr: ws.map(w => { const f = acc / total; acc += w; return f; }) });
       perBar.set(i, total * 0.8);
+      // いちばん狭い和音の間隔が minGap になる幅。和音が1つだけの小節は間隔がないので要らない
+      if (ts.length > 1) minW.set(i, minGap * total / Math.min(...ws.slice(0, -1)));
     });
     // 拍子記号は曲の頭と、拍子が変わる小節に、小節線のすぐ右に描く。そのぶん小節の頭を空ける
     this.sigOf = new Map();
@@ -84,7 +91,8 @@ export class SheetView {
     const rows = [];
     let row = [], x = left;
     chart.bars.forEach((bar, i) => {
-      const w = Math.max(120 * gx, ((perBar.get(i) || 1) * MIN_GROUP_PX + 28) * gx) + (this.sigOf.get(i)?.w ?? 0);
+      // 小節の中の幅は、両端の余白（xAt の 18k と 12k）を除いたぶん。1小節だけで段に収まらないときは、段の幅に合わせて縮む
+      const w = Math.max(120 * gx, ((perBar.get(i) || 1) * MIN_GROUP_PX + 28) * gx, (minW.get(i) ?? 0) + 30 * k) + (this.sigOf.get(i)?.w ?? 0);
       if (row.length && x + w > right) {
         rows.push(row); row = []; x = left;
       }
@@ -122,7 +130,7 @@ export class SheetView {
     this.hairpins = runsOf(chart, grp => grp.hairpin, true);
     this.dynamics = this.hairpins.length > 0 || chart.groups.some(grp => grp.dynamic);
     this.rows = rows;
-    this._rowsFor = chart; this._w = this.w; this._k = k;
+    this._rowsFor = chart; this._w = this.w; this._k = k; this._spacing = this.spacing;
     return rows;
   }
 
