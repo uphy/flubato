@@ -105,13 +105,15 @@ export class View {
 
     // リズム（見えている小節ぶん。連符の数字の区切りが画面の端でずれないように小節ごと）
     const visBars = new Set(chart.bars.map((b, i) => (b.end >= tMin && b.t <= tMax ? i : -1)).filter(i => i >= 0));
-    // 符尾は音符の上下の端から（音符は後から重ねて描く）
+    // 符尾は五線譜の符頭と同じく、上向きは音符の右の端、下向きは左の端に付ける。
+    // 真ん中に付けると、小節線・拍の線と一直線につながって、上と下の声部が1本の線に見える
+    const nh = L.noteH, nw = Math.max(nh * 1.2, 28);
+    const stemX = r => xOf(r.t) + (r.up ? 1 : -1) * (nw / 2 - 0.5);
     const stemFrom = r => {
       if (!r.strings.length) return undefined;
-      const s = r.up ? Math.min(...r.strings) : Math.max(...r.strings);
-      return L.lanes[s - 1] + (r.up ? -1 : 1) * L.noteH / 2;
+      return L.lanes[(r.up ? Math.min(...r.strings) : Math.max(...r.strings)) - 1];
     };
-    drawRhythm(g, chart, chart.rhythm.filter(r => visBars.has(r.bar)), r => xOf(r.t), { L: yBot - 4, T: yTop + 4, stemFrom }, 'rgba(236,238,243,0.4)');
+    drawRhythm(g, chart, chart.rhythm.filter(r => visBars.has(r.bar)), stemX, { L: yBot - 4, T: yTop + 4, stemFrom }, 'rgba(236,238,243,0.4)');
 
     // 和音のつなぎ線
     for (const grp of chart.groups) {
@@ -124,7 +126,6 @@ export class View {
     }
 
     // 音符（後ろから描く）
-    const nh = L.noteH, nw = Math.max(nh * 1.2, 28);
     g.font = `700 ${Math.round(nh * 0.62)}px ${FONT}`;
     g.textAlign = 'center';
     // 装飾音は本音符とほとんど同じ時刻なので、そのまま置くと本音符の箱に重なって隠してしまう。
