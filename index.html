@@ -116,6 +116,9 @@ body.reviewing .transport { display: none; }
 body.live #play { background: var(--raised-hi); color: var(--text); box-shadow: none; border-color: var(--line-strong); }
 body.live #play:hover { background: #353c50; }
 body.live #play kbd { color: var(--dim); border-color: var(--line-strong); }
+/* 再生の操作（⏮・再生・速さ）はひとまとまり */
+.t-demo { display: inline-flex; align-items: center; gap: 8px; }
+body.live .t-demo { display: none; } /* 弾いている間は使わないので隠し、譜面を広く見せる */
 #demo.on { color: var(--accent); border-color: rgba(255,210,74,.45); background: var(--accent-soft); }
 #speed-v { min-width: 3.2em; color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 
@@ -221,6 +224,7 @@ body.reviewing #stage { left: 300px; width: calc(100% - 300px); }
 @media (max-width: 980px) { .hud-sub, #song-meta { display: none; } .brand span { display: none; } }
 /* ---- スマホ ---- */
 @media (hover: none) and (pointer: coarse) { #play kbd, .keys-sec { display: none; } }
+@media (max-height: 500px) { .transport .hint { display: none; } } /* スマホの横持ち: 下の帯を1段に収め、譜面を広く見せる */
 @media (max-width: 720px) {
   /* 上の帯: 1段目に曲名とボタン、2段目にモードと正解率 */
   .top { grid-template-columns: minmax(0, 1fr) auto auto auto auto; grid-template-areas: "left rec tuner mic gear" "seg hud hud hud hud"; gap: 8px; padding: 8px 12px; }
@@ -239,6 +243,11 @@ body.reviewing #stage { left: 300px; width: calc(100% - 300px); }
   .transport { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "l p"; gap: 10px 12px; padding: 10px 12px; }
   body[data-mode=game] .transport { grid-template-areas: "l l" "r r" "p p"; }
   body[data-mode=practice] .t-right { display: none; }
+  /* 練習は縦に2段: 上が再生（聞く）、下が開始ボタン（弾く） */
+  body[data-mode=practice] .transport { grid-template-areas: "d d" "p p"; }
+  body[data-mode=practice] .t-left { display: contents; }
+  .t-demo { grid-area: d; }
+  .t-demo > .field { margin-left: auto; }
   .t-left { grid-area: l; } .t-right { grid-area: r; justify-content: flex-start; gap: 8px; }
   .transport .hint { display: none; }
   #play { grid-area: p; min-width: 0; width: 100%; padding: 11px 12px; gap: 6px; }
@@ -398,10 +407,17 @@ body.reviewing #stage { left: 300px; width: calc(100% - 300px); }
 
 <footer class="transport">
   <div class="t-left">
-    <span class="field"><span class="practice-only">ここから</span><span class="game-only">小節</span><select id="from" title="はじめる小節"></select><span class="game-only">〜</span><select id="to" class="game-only" title="おわる小節"></select></span>
+    <span class="field game-only">小節<select id="from" title="はじめる小節"></select><span class="game-only">〜</span><select id="to" class="game-only" title="おわる小節"></select></span>
     <label class="chip game-only" title="範囲をくり返す"><input type="checkbox" id="loop"><svg class="i"><use href="#i-loop"/></svg>くり返す</label>
-    <button id="demo" class="practice-only" title="譜面の音を鳴らして聞く（ヘッドホンで）。聞いている間は、弾いた音を聞き取らない"></button>
-    <span class="hint practice-only">譜面の小節を押しても選べます</span>
+    <span class="t-demo practice-only">
+      <button id="demo-top" class="icon-btn" title="1小節目に戻る"><svg class="i"><use href="#i-prev"/></svg></button>
+      <button id="demo" title="譜面の音を鳴らして聞く（ヘッドホンで）。聞いている間は、弾いた音を聞き取らない"></button>
+      <span class="field" title="再生の速さ">速さ<select id="demo-speed">
+        <option value="40">40%</option><option value="50">50%</option><option value="60">60%</option><option value="70">70%</option>
+        <option value="80">80%</option><option value="90">90%</option><option value="100">100%</option><option value="110">110%</option><option value="120">120%</option>
+      </select></span>
+    </span>
+    <span class="hint practice-only">譜面の小節を押すと、そこから始めます</span>
   </div>
   <button id="play" class="primary"></button>
   <div class="t-right">

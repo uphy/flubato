@@ -613,6 +613,7 @@ async function startDemo(fromBar = Number($('from').value)) {
   if (S.listening) stopPractice(false);
   $('presult').hidden = true;
   S.demo ??= new DemoPlayer(S.audio);
+  S.demo.rate = demoSpeed();
   // 止めたところの小節から始めるなら、小節の頭ではなく止めた和音から続ける
   const resume = S.demoResume !== null && S.chart.groups[S.demoResume]?.bar === fromBar ? S.chart.groups[S.demoResume].t : null;
   S.demoResume = null;
@@ -637,6 +638,20 @@ function pauseDemo() {
   S.demoResume = cur;
   $('from').value = String(S.chart.groups[cur].bar);
   S.follower.start(cur);
+  S.finalPlayed = null; S.lastStumbles = null;
+  updatePracticeStats();
+}
+
+function demoSpeed() { return Number($('demo-speed').value) / 100; }
+
+/** ⏮: 1小節目に戻る。鳴らしている途中なら、1小節目から鳴らし直す */
+function demoTop() {
+  $('from').value = '0';
+  S.demoResume = null;
+  sheet.follow();
+  if (S.demo?.playing) { startDemo(0); return; }
+  if (S.listening) return;
+  S.follower.start(0);
   S.finalPlayed = null; S.lastStumbles = null;
   updatePracticeStats();
 }
@@ -1084,6 +1099,11 @@ $('lib-list').addEventListener('click', async e => {
 });
 $('play').addEventListener('click', togglePlay);
 $('demo').addEventListener('click', () => (S.demo?.playing ? pauseDemo() : startDemo()));
+$('demo-top').addEventListener('click', demoTop);
+$('demo-speed').addEventListener('change', () => {
+  store.set('demoSpeed', Number($('demo-speed').value));
+  S.demo?.setRate(demoSpeed());
+});
 $('speed').addEventListener('input', syncSpeedLabel);
 $('zoom').addEventListener('input', e => { view.pps = Number(e.target.value); store.set('zoom', view.pps); syncRange(e.target); });
 $('sheet-scale').addEventListener('input', e => { sheet.scale = Number(e.target.value) / 100; store.set('sheetScale', sheet.scale); syncSheetScale(); });
@@ -1283,6 +1303,7 @@ $('check-update').addEventListener('click', () => { $('update-state').textConten
 view.pps = store.get('zoom', 240); $('zoom').value = String(view.pps); syncRange($('zoom'));
 sheet.scale = store.get('sheetScale', 1); $('sheet-scale').value = String(Math.round(sheet.scale * 100)); syncSheetScale();
 $('strict').value = store.get('strict', 'normal');
+$('demo-speed').value = String(store.get('demoSpeed', 100));
 $('follow').checked = store.get('follow', true);
 $('lat').textContent = `${Math.round(S.latency * 1000)}ms`;
 syncSpeedLabel();
