@@ -101,15 +101,13 @@ export class SheetView {
       if (n.kind === 'legato' && lastOn.has(n.string)) this.prevOnString.set(n.id, lastOn.get(n.string));
       lastOn.set(n.string, n.id);
     }
-    // レットリングが続く和音のまとまり（間にレットリングでない和音が入ったら切る）
-    this.letRingRuns = [];
-    let run = null;
-    chart.groups.forEach((grp, gi) => {
-      if (grp.noteIds.some(id => chart.notes[id].letRing)) {
-        if (!run) this.letRingRuns.push(run = []);
-        run.push(gi);
-      } else if (!grp.grace) run = null;
-    });
+    // 段の上に線で示す記号（レットリング・ブリッジミュート）が続く和音のまとまり。使っている記号ごとに1本ずつ、下から並べる
+    this.spans = [['let ring', n => n.letRing], ['P.M.', n => n.palmMute]]
+      .map(([label, has]) => ({ label, runs: runsOf(chart, grp => grp.noteIds.some(id => has(chart.notes[id])) || null) }))
+      .filter(sp => sp.runs.length);
+    // クレッシェンド・デクレッシェンドが続く和音のまとまり
+    this.hairpins = runsOf(chart, grp => grp.hairpin, true);
+    this.dynamics = this.hairpins.length > 0 || chart.groups.some(grp => grp.dynamic);
     this.rows = rows;
     this._rowsFor = chart; this._w = this.w; this._k = k;
     return rows;
@@ -133,8 +131,11 @@ export class SheetView {
     const staffH = stringGap * n1;
     const rhythmH = RHYTHM_H * k;
     const upH = chart.voiced ? rhythmH : 0; // 声部が2つある曲は、上にも上の声部の符尾の段
-    const rowH = staffH + rhythmH + upH + stringGap * 2.6 + 24 * k; // 下にリズム（符尾・連桁）の段と、段のあいだ
-    const padTop = stringGap * 2.2 + 8; // 段の上にレットリングの線を引くぶん
+    const lanes = Math.max(1, this.spans.length); // 段の上の、レットリング・P.M. の線の本数
+    const dynH = this.dynamics ? 18 * k : 0; // リズムの下の、強弱記号の段
+    // 下にリズム（符尾・連桁）の段と強弱記号の段、段のあいだ
+    const rowH = staffH + rhythmH + upH + dynH + stringGap * (2.6 + 0.6 * (lanes - 1)) + 24 * k;
+    const padTop = stringGap * (1.6 + 0.6 * lanes) + 8; // 段の上にレットリングなどの線を引くぶん
     const fs = Math.max(9, Math.round(stringGap * 0.8));
     const font = `600 ${fs}px ${FONT}`;
     const graceFont = `600 ${Math.round(fs * 0.72)}px ${FONT}`; // 装飾音は小さく
@@ -177,7 +178,8 @@ export class SheetView {
       const top = topOf(ri), x = this.xAt(chart, grp.bar, grp.t);
       const notes = grp.noteIds.map(id => {
         const n = chart.notes[id];
-        const label = n.kind === 'dead' ? '×' : n.kind === 'harmonic' ? `<${n.fret}>` : String(n.fret);
+        const text = n.kind === 'dead' ? '×' : n.kind === 'harmonic' ? `<${n.fret}>` : String(n.fret);
+        const label = n.ghost ? `(${text})` : text; // ゴーストノートはかっこで囲む
         g.font = n.grace ? graceFont : font;
         const tw = g.measureText(label).width + fs * 0.35;
         const key = `${ri}:${n.string}`;
@@ -319,11 +321,16 @@ export class SheetView {
         const tip = grp.stroke.up ? y1 : y0;
         g.beginPath(); g.moveTo(sx, tip); g.lineTo(sx + head * 0.6, tip - dir * head); g.lineTo(sx - head * 0.6, tip - dir * head); g.closePath(); g.fill();
       }
-      // スタッカートの点とアクセント。和音ごとに1つ、段の上に（Guitar Pro のタブ譜と同じ置き方）。上の声部の符尾があれば、その上に
+      // スタッカートの点・テヌートの線・アクセント。和音ごとに1つ、段の上に下から積む（Guitar Pro のタブ譜と同じ置き方）。
+      // 上の声部の符尾があれば、その上に
       g.fillStyle = g.strokeStyle = played === 1 && !isNext ? C.played : C.ink;
       let ay = top - (chart.bars[grp.bar].voiced ? upH : 0) - stringGap * 1.25;
       if (notes.some(({ n }) => n.staccato)) {
         g.beginPath(); g.arc(x, ay, Math.max(1.8, fs * 0.13), 0, Math.PI * 2); g.fill();
+        ay -= stringGap * 0.5;
+      }
+      if (notes.some(({ n }) => n.tenuto)) {
+        g.fillRect(x - fs * 0.32, ay - 0.75, fs * 0.64, 1.5);
         ay -= stringGap * 0.5;
       }
       const accent = Math.max(0, ...notes.map(({ n }) => n.accent ?? 0));
@@ -339,38 +346,70 @@ export class SheetView {
       if (tags.length) {
         const text = tags.join('');
         g.font = `700 11px ${FONT}`;
-        const tw = g.measureText(text).width + 8, ty = top + staffH + rhythmH + 12;
+        const tw = g.measureText(text).width + 8, ty = top + staffH + rhythmH + dynH + 12;
         g.fillStyle = C.badSoft; roundRect(g, x - tw / 2, ty - 8, tw, 16, 4); g.fill();
         g.fillStyle = C.bad; g.fillText(text, x, ty + 0.5);
       }
     }
-    // レットリング: 続けて響かせる和音の上に「let ring」と点線を引き、終わりを縦の線で閉じる。段をまたぐときは段ごとに引く
-    for (const run of this.letRingRuns) {
-      const byRow = new Map();
+    const gx = gi => this.xAt(chart, chart.groups[gi].bar, chart.groups[gi].t);
+    // 和音のまとまりを段ごとに分ける（段をまたぐときは段ごとに引く）
+    const byRow = run => {
+      const out = new Map();
       for (const gi of run) {
         const ri = this.rowOfBar.get(chart.groups[gi].bar);
-        if (!byRow.has(ri)) byRow.set(ri, []);
-        byRow.get(ri).push(gi);
+        if (!out.has(ri)) out.set(ri, []);
+        out.get(ri).push(gi);
       }
-      for (const [ri, gis] of byRow) {
-        if (!visible(ri)) continue;
-        const row = rows[ri], last = row[row.length - 1];
-        const y = topOf(ri) - (row.some(b => chart.bars[b.i].voiced) ? upH : 0) - stringGap * 1.95; // 上の声部の符尾があれば、その上に
-        const first = gis[0] === run[0], end = gis[gis.length - 1] === run[run.length - 1];
-        const gx = gi => this.xAt(chart, chart.groups[gi].bar, chart.groups[gi].t);
+      return [...out].filter(([ri]) => visible(ri)).map(([ri, gis]) => ({
+        ri, gis, row: rows[ri], first: gis[0] === run[0], end: gis[gis.length - 1] === run[run.length - 1],
+      }));
+    };
+    // レットリング・P.M.: 続く和音の上に名前と点線を引き、終わりを縦の線で閉じる
+    this.spans.forEach(({ label, runs }, lane) => {
+      for (const run of runs) for (const { ri, gis, row, first, end } of byRow(run)) {
+        const last = row[row.length - 1];
+        const y = topOf(ri) - upH - stringGap * (1.95 + 0.6 * lane); // 小節番号と同じく、上の声部の符尾の段の上に
         let x0 = first ? gx(gis[0]) - fs * 0.5 : this.rowLeft + CLEF_W * k;
         let x1 = end ? gx(gis[gis.length - 1]) + fs * 0.9 : last.x + last.w;
         g.fillStyle = g.strokeStyle = C.faint;
         if (first) {
           g.font = `italic 600 ${Math.max(9, Math.round(fs * 0.62))}px ${FONT}`; g.textAlign = 'left';
-          g.fillText('let ring', x0, y);
-          x0 += g.measureText('let ring').width + 4;
+          g.fillText(label, x0, y);
+          x0 += g.measureText(label).width + 4;
         }
         x1 = Math.max(x1, x0 + fs);
         g.lineWidth = 1; g.setLineDash([3, 3]);
         g.beginPath(); g.moveTo(x0, y + 0.5); g.lineTo(x1, y + 0.5); g.stroke();
         g.setLineDash([]);
         if (end) { g.beginPath(); g.moveTo(x1 + 0.5, y - 3); g.lineTo(x1 + 0.5, y + 4); g.stroke(); }
+      }
+    });
+    // 強弱記号とクレッシェンドの記号（<、>）。リズムの段の下に
+    if (this.dynamics) {
+      const dynY = ri => topOf(ri) + staffH + fs * 0.3 + rhythmH + dynH / 2 + 2 * k;
+      const dynFont = `italic 700 ${Math.max(10, Math.round(fs * 0.9))}px Georgia, "Times New Roman", serif`;
+      const labelW = gi => { const d = chart.groups[gi].dynamic; if (!d) return 0; g.font = dynFont; return g.measureText(d).width; };
+      g.fillStyle = g.strokeStyle = C.rhythm;
+      for (const { grp, gi, ri, x } of placed) {
+        if (!grp.dynamic) continue;
+        g.font = dynFont; g.textAlign = 'center';
+        g.fillText(grp.dynamic, x, dynY(ri));
+      }
+      for (const run of this.hairpins) {
+        const dir = chart.groups[run[0]].hairpin, after = run[run.length - 1] + 1;
+        for (const { ri, gis, row, first, end } of byRow(run)) {
+          const last = row[row.length - 1], y = dynY(ri), h = 5.5 * k;
+          const x0 = first ? gx(gis[0]) + (labelW(gis[0]) ? labelW(gis[0]) / 2 + 5 * k : -fs * 0.3) : this.rowLeft + CLEF_W * k;
+          // 次の和音が同じ段にあれば、その手前（強弱記号があればその左端の手前）まで
+          const next = end && after < chart.groups.length && this.rowOfBar.get(chart.groups[after].bar) === ri;
+          let x1 = next ? gx(after) - Math.max(fs * 0.6, labelW(after) / 2 + 5 * k) : end ? gx(gis[gis.length - 1]) + fs : last.x + last.w - 4 * k;
+          x1 = Math.max(x1, x0 + fs);
+          // 段をまたぐときは、開き具合を段の境目でつなぐ
+          const a0 = first ? (dir === '<' ? 0 : 1) : 0.5, a1 = end ? (dir === '<' ? 1 : 0) : 0.5;
+          g.lineWidth = 1.2; g.beginPath();
+          g.moveTo(x1, y - h * a1); g.lineTo(x0, y - h * a0); g.moveTo(x0, y + h * a0); g.lineTo(x1, y + h * a1);
+          g.stroke();
+        }
       }
     }
     // 手で動かしている間は、全体のどこを見ているかを右端に出す
@@ -443,4 +482,21 @@ function roundRect(g, x, y, w, h, r) {
   g.arcTo(x, y + h, x, y, r);
   g.arcTo(x, y, x + w, y, r);
   g.closePath();
+}
+
+/**
+ * 和音を順に見て、key(和音) が同じ値で続くところを [和音の番号…] のまとまりにする（null ならまとまりの外）。
+ * 装飾音だけの和音は、途中にあってもまとまりを切らない。byValue なら値が変わったところでも切る
+ */
+function runsOf(chart, key, byValue = false) {
+  const runs = [];
+  let run = null, cur = null;
+  chart.groups.forEach((grp, gi) => {
+    const v = key(grp);
+    if (v !== null && v !== undefined) {
+      if (!run || (byValue && v !== cur)) runs.push(run = []);
+      run.push(gi); cur = v;
+    } else if (!grp.grace) run = null;
+  });
+  return runs;
 }

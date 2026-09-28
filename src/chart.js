@@ -7,6 +7,14 @@ const TICKS_PER_QUARTER = 960;
 // ナチュラルハーモニクスのフレット → 開放弦から何半音上が鳴るか
 const NATURAL_HARMONIC = { 12: 12, 7: 19, 19: 19, 5: 24, 24: 24, 4: 28, 9: 28, 16: 28, 3: 31 };
 
+// 強弱記号（alphaTab の DynamicValue の順）→ [書き方, 強さ（f を 0 とした段階）]
+// sf・fp のように弾いた瞬間だけ強い記号は、弦を弾いた音では減り方を変えられないので、弾いた瞬間の強さで鳴らす
+const DYNAMICS = [
+  ['ppp', -5], ['pp', -4], ['p', -3], ['mp', -2], ['mf', -1], ['f', 0], ['ff', 1], ['fff', 2],
+  ['pppp', -6], ['ppppp', -7], ['pppppp', -8], ['ffff', 3], ['fffff', 4], ['ffffff', 5],
+  ['sf', 1], ['sfp', 1], ['sfpp', 1], ['fp', 0], ['rf', 1],
+];
+
 export function loadScore(bytes) {
   const settings = new at.Settings();
   return at.importer.ScoreLoader.loadScoreFromBytes(bytes, settings);
@@ -32,14 +40,18 @@ export function guitarTracks(score) {
 
 /**
  * 譜面を作る。
- * notes: { id, t, dur, string(1=1弦), fret, midi, kind('normal'|'dead'|'harmonic'|'legato'), grace, staccato, letRing, accent, group, bar, voice（0始まり） }
+ * notes: { id, t, dur, string(1=1弦), fret, midi, kind('normal'|'dead'|'harmonic'|'legato'), grace, staccato, letRing, palmMute, accent, tenuto, ghost, level, group, bar, voice（0始まり） }
  *   dur: 書かれた長さ（タイでつないだ先まで）
  *   grace: 装飾音なら { slot }。slot は本音符までに挟まる装飾音の数（0 = 本音符の直前）
- *   accent: 0 = なし、1 = アクセント（>）、2 = 強いアクセント（^）
+ *   accent: 0 = なし、1 = アクセント（>）、2 = 強いアクセント（マルカート、^）
+ *   ghost: ゴーストノート（かっこで囲んで、弱く弾く音）
+ *   level: 強弱記号とクレッシェンドから決まる強さ。f を 0 に、1段階（mf → f など）を 1 として数える
  *   strum: ストロークで和音をずらして弾くとき、和音の時刻から何秒遅れて鳴るか（なければ 0）
  * bars:  { t, index(0始まり), number(表示用), voiced（符尾を上下に分ける） } を再生順に
  * group: 同時に弾く音のまとまり（和音）。groups[g] = { t, noteIds, bar, grace（装飾音だけの和音なら true）, stroke }
  *   stroke: ストローク（波線の矢印）なら { up（1弦から6弦へ）, arpeggio（ゆっくり分散させる） }、なければ null
+ *   dynamic: 強弱記号（'mf' など）。前の和音から変わったところだけ。なければ null
+ *   hairpin: クレッシェンドなら '<'、デクレッシェンドなら '>'、なければ null
  */
 export function buildChart(score, trackIndex) {
   const settings = new at.Settings();
@@ -131,8 +143,9 @@ export function buildChart(score, trackIndex) {
           // スタッカートは書かれた長さの半分で切る
           notes.push({
             id, t, dur: n.isStaccato ? Math.max(0.05, dur / 2) : dur, string: guitarString, fret: n.fret, midi, kind,
-            grace: grace ? { slot: 0 } : null, staccato: n.isStaccato, letRing: n.isLetRing,
+            grace: grace ? { slot: 0 } : null, staccato: n.isStaccato, letRing: n.isLetRing, palmMute: n.isPalmMute,
             accent: n.accentuated === at.model.AccentuationType.Heavy ? 2 : n.accentuated === at.model.AccentuationType.Normal ? 1 : 0,
+            tenuto: n.accentuated === at.model.AccentuationType.Tenuto, ghost: n.isGhost, level: 0,
             strum: strum.has(n) ? tickToSec(startTick + strum.get(n)) - t : 0,
             group: groups.length, bar: bars.length - 1, voice: beat.voice.index,
           });
@@ -142,7 +155,7 @@ export function buildChart(score, trackIndex) {
         const B = at.model.BrushType;
         const stroke = beat.brushType === B.None ? null
           : { up: beat.brushType === B.BrushUp || beat.brushType === B.ArpeggioUp, arpeggio: beat.brushType === B.ArpeggioUp || beat.brushType === B.ArpeggioDown };
-        if (ids.length > 0) groups.push({ t, noteIds: ids, bar: bars.length - 1, stroke });
+        if (ids.length > 0) groups.push({ t, noteIds: ids, bar: bars.length - 1, stroke, dyn: beat.dynamics, cresc: beat.crescendo });
       }
       if (bl === mb.lastBeat) break;
     }
@@ -151,11 +164,15 @@ export function buildChart(score, trackIndex) {
   const merged = [];
   for (const g of groups) {
     const prev = merged[merged.length - 1];
-    if (prev && Math.abs(prev.t - g.t) < 0.005) { prev.noteIds.push(...g.noteIds); prev.stroke ??= g.stroke; }
-    else merged.push({ t: g.t, noteIds: [...g.noteIds], bar: g.bar, stroke: g.stroke });
+    if (prev && Math.abs(prev.t - g.t) < 0.005) {
+      prev.noteIds.push(...g.noteIds);
+      prev.stroke ??= g.stroke;
+      prev.cresc ||= g.cresc;
+    } else merged.push({ t: g.t, noteIds: [...g.noteIds], bar: g.bar, stroke: g.stroke, dyn: g.dyn, cresc: g.cresc });
   }
   merged.forEach((g, i) => g.noteIds.forEach(id => { notes[id].group = i; }));
   merged.forEach(g => { g.grace = g.noteIds.every(id => notes[id].grace); });
+  applyDynamics(merged, notes);
   // 装飾音が続くとき、本音符から数えて何番目か（描くときに左へずらして並べる）
   for (let i = merged.length - 1, slot = 0; i >= 0; i--) {
     const graces = merged[i].noteIds.filter(id => notes[id].grace);
@@ -219,4 +236,40 @@ function strumTicks(beat) {
   const step = ns.length > 1 ? Math.floor(beat.brushDuration / (ns.length - 1)) : 0;
   ns.forEach((n, k) => out.set(n, k * step));
   return out;
+}
+
+/**
+ * 和音ごとの強弱記号とクレッシェンドを、描く印（dynamic・hairpin）と音の強さ（level）にする。
+ * alphaTab は何も書いていない拍を f として読むので、曲の頭が f なら記号は出さない
+ */
+function applyDynamics(groups, notes) {
+  const C = at.model.CrescendoType;
+  let prev = at.model.DynamicValue.F;
+  for (const g of groups) {
+    const d = DYNAMICS[g.dyn] ?? DYNAMICS[at.model.DynamicValue.F];
+    g.dynamic = g.dyn !== prev ? d[0] : null;
+    g.level = d[1];
+    g.hairpin = g.cresc === C.Crescendo ? '<' : g.cresc === C.Decrescendo ? '>' : null;
+    prev = g.dyn;
+  }
+  // クレッシェンドの続く和音は、次の強弱記号へ向けて少しずつ強さを変える。
+  // 次に記号がない（か向きが合わない）ときは1段階ぶん変える
+  for (let a = 0; a < groups.length;) {
+    const dir = groups[a].hairpin;
+    let b = a;
+    while (dir && groups[b + 1]?.hairpin === dir) b++;
+    if (dir) {
+      const base = groups[a].level, sign = dir === '<' ? 1 : -1, after = groups[b + 1];
+      const marked = after?.dynamic && Math.sign(after.level - base) === sign;
+      const target = marked ? after.level : base + sign;
+      // 次に記号があれば、その和音で届く。なければクレッシェンドの最後の和音で届き、次の記号まで保つ
+      for (let i = a; i <= b; i++) groups[i].level = base + (target - base) * (i - a + (marked ? 0 : 1)) / (b - a + 1);
+      if (!marked) for (let j = b + 1; j < groups.length && !groups[j].dynamic && !groups[j].hairpin; j++) groups[j].level = target;
+    }
+    a = b + 1;
+  }
+  for (const g of groups) {
+    for (const id of g.noteIds) notes[id].level = g.level;
+    delete g.dyn; delete g.cresc;
+  }
 }

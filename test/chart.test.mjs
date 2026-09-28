@@ -77,3 +77,17 @@ test('ストロークは和音に向きが付き、音を弦の順にずらし�
   assert.ok(strum(1)[2][1] > 0);
   assert.deepEqual(strum(2), [[1, 0], [2, 0]]);
 });
+
+test('テヌート・ゴーストノート・ブリッジミュートは印が付く', () => {
+  const c = buildChart(scoreFromAlphaTex(`\\tempo 60 . 3.3{ten}.4 3.3{g}.4 3.3{pm}.4 3.3.4`), 0);
+  assert.deepEqual(c.notes.map(n => [n.tenuto, n.ghost, n.palmMute]), [[true, false, false], [false, true, false], [false, false, true], [false, false, false]]);
+});
+
+test('強弱記号は変わったところにだけ付き、クレッシェンドは次の記号へ向けて強さを変える', () => {
+  const c = buildChart(scoreFromAlphaTex(`\\tempo 60 . 3.3.4 3.3.4{dy p} 3.3.4{cre} 3.3.4{cre} | 3.3.4{dy f} 3.3.4 3.3.4{dec} 3.3.4{dec} | 3.3.4`), 0);
+  assert.deepEqual(c.groups.map(g => g.dynamic), [null, 'p', null, null, 'f', null, null, null, null], '頭の f（何も書いていない）は出さない');
+  assert.deepEqual(c.groups.map(g => g.hairpin), [null, null, '<', '<', null, null, '>', '>', null]);
+  // p（-3）から f（0）へ: クレッシェンドの2つの和音で -3 → -1.5、f で届く。
+  // デクレッシェンドの先に記号がないときは1段階（-1）下げ、そのまま保つ
+  assert.deepEqual(c.notes.map(n => n.level), [0, -3, -3, -1.5, 0, 0, -0.5, -1, -1]);
+});
