@@ -48,3 +48,11 @@ test('待ち受けモード: 遅れても窓を閉じずに待つ', () => {
   const r = runJudge(scale, render(play(scale, p => ({ ...p, t: p.t + 0.4 })), scale.duration + 2), { pre: PRE, waitMode: true });
   assert.ok(r.rate >= 0.9, `rate ${r.rate}`);
 });
+
+test('装飾音は弾かなくても失敗にならない', () => {
+  const c = buildChart(scoreFromAlphaTex(`\\tempo 90 . 0.3.4 2.3.4 {gr} 3.3.4 5.3.4 7.3.4 | 0.1.1`), 0);
+  const r = judge(c, play(c).filter((p, i) => !c.notes[i].grace));
+  const grace = c.notes.find(n => n.grace);
+  assert.equal(r.judge.state[grace.id].result, 'pass');
+  assert.ok(c.notes.filter(n => !n.grace).every(n => r.judge.state[n.id].result === 'hit'));
+});

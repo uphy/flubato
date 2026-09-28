@@ -57,6 +57,8 @@ export class Judge {
       if (n.t - o.early > t) break;
       const st = this.state[i];
       if (st.result) continue;
+      // 装飾音は弾き逃しても失敗にしない（小さく速い音で、聞き取りも弾くのも難しい）。待つ設定でも待たない
+      if (n.grace && t > n.t + o.late) { st.result = 'pass'; continue; }
       if (!this.waitMode && t > n.t + o.late) {
         st.result = 'miss';
         out.push({ id: i, result: 'miss', delta: 0 });
@@ -99,7 +101,7 @@ export class Judge {
   nextPendingTime() {
     for (let i = this.cursor; i < this.chart.notes.length; i++) {
       const st = this.state[i];
-      if (!st.result) return this.chart.notes[i].t;
+      if (!st.result && !this.chart.notes[i].grace) return this.chart.notes[i].t;
     }
     return Infinity;
   }

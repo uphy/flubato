@@ -416,7 +416,7 @@ function tally() {
   let hit = 0, total = 0, dsum = 0;
   S.chart.notes.forEach((n, i) => {
     const r = st[i].result;
-    if (r === 'skip' || !r) return;
+    if (r !== 'hit' && r !== 'miss') return;
     total++;
     if (r === 'hit') { hit++; dsum += st[i].delta; }
   });
