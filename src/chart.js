@@ -32,7 +32,7 @@ export function guitarTracks(score) {
 
 /**
  * 譜面を作る。
- * notes: { id, t, dur, string(1=1弦), fret, midi, kind('normal'|'dead'|'harmonic'|'legato'), grace, group, bar }
+ * notes: { id, t, dur, string(1=1弦), fret, midi, kind('normal'|'dead'|'harmonic'|'legato'), grace, staccato, group, bar }
  *   grace: 装飾音なら { slot }。slot は本音符までに挟まる装飾音の数（0 = 本音符の直前）
  * bars:  { t, index(0始まり), number(表示用) } を再生順に
  * group: 同時に弾く音のまとまり（和音）。groups[g] = { t, noteIds, bar, grace（装飾音だけの和音なら true） }
@@ -116,7 +116,11 @@ export function buildChart(score, trackIndex) {
             midi = open + NATURAL_HARMONIC[n.fret];
           } else if (n.isHammerPullDestination || n.isSlurDestination || n.slideOrigin) kind = 'legato';
           const id = notes.length;
-          notes.push({ id, t, dur, string: guitarString, fret: n.fret, midi, kind, grace: grace ? { slot: 0 } : null, group: groups.length, bar: bars.length - 1 });
+          // スタッカートは書かれた長さの半分で切る
+          notes.push({
+            id, t, dur: n.isStaccato ? Math.max(0.05, dur / 2) : dur, string: guitarString, fret: n.fret, midi, kind,
+            grace: grace ? { slot: 0 } : null, staccato: n.isStaccato, group: groups.length, bar: bars.length - 1,
+          });
           ids.push(id);
         }
         if (ids.length > 0) groups.push({ t, noteIds: ids, bar: bars.length - 1 });

@@ -66,7 +66,12 @@ export class DemoPlayer {
     gain.gain.value = n.kind === 'legato' ? 0.45 : n.string >= 4 ? 0.8 : 0.65; // 左手だけで鳴らす音は小さく、低音弦は少し太く
     src.connect(gain).connect(this.out);
     src.start(at);
-    this.voices.set(n.string, { src, gain });
+    if (n.staccato) {
+      // スタッカートは譜面の長さ（書かれた長さの半分）で止める。止めた音は次の音で止め直さない
+      gain.gain.setTargetAtTime(0, at + n.dur, 0.012);
+      src.stop(at + n.dur + 0.1);
+      this.voices.delete(n.string);
+    } else this.voices.set(n.string, { src, gain });
   }
 
   _sound(n) {

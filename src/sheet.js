@@ -281,6 +281,11 @@ export class SheetView {
           g.stroke(); g.setLineDash([]);
         }
       }
+      // スタッカートの点。和音ごとに1つ、段の上に（Guitar Pro のタブ譜と同じ置き方）
+      if (notes.some(({ n }) => n.staccato)) {
+        g.fillStyle = played === 1 && !isNext ? C.played : C.ink;
+        g.beginPath(); g.arc(x, top - stringGap * 1.1, Math.max(1.8, fs * 0.13), 0, Math.PI * 2); g.fill();
+      }
       // 和音の下に、どう悪かったかを1文字で
       const tags = (R?.marks ?? []).map(m => MARK_TAGS[m.kind]).filter(Boolean);
       if (tags.length) {

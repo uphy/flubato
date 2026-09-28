@@ -39,3 +39,8 @@ test('装飾音は本音符と別の音として入り、印が付く。リズ�
   assert.ok(bar0[1].t < bar0[2].t && bar0[2].t < main.t);
   assert.equal(c.rhythm.filter(r => r.bar === 0).length, 4);
 });
+
+test('スタッカートは印が付き、長さが半分になる', () => {
+  const c = buildChart(scoreFromAlphaTex(`\\tempo 60 . 3.3{st}.4 3.3.4 (0.1{st} 0.2{st}).2`), 0);
+  assert.deepEqual(c.notes.map(n => [n.staccato, n.dur]), [[true, 0.5], [false, 1], [true, 1], [true, 1]]);
+});
