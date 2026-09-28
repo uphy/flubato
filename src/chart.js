@@ -36,8 +36,10 @@ export function guitarTracks(score) {
  *   dur: 書かれた長さ（タイでつないだ先まで）
  *   grace: 装飾音なら { slot }。slot は本音符までに挟まる装飾音の数（0 = 本音符の直前）
  *   accent: 0 = なし、1 = アクセント（>）、2 = 強いアクセント（^）
+ *   strum: ストロークで和音をずらして弾くとき、和音の時刻から何秒遅れて鳴るか（なければ 0）
  * bars:  { t, index(0始まり), number(表示用), voiced（符尾を上下に分ける） } を再生順に
- * group: 同時に弾く音のまとまり（和音）。groups[g] = { t, noteIds, bar, grace（装飾音だけの和音なら true） }
+ * group: 同時に弾く音のまとまり（和音）。groups[g] = { t, noteIds, bar, grace（装飾音だけの和音なら true）, stroke }
+ *   stroke: ストローク（波線の矢印）なら { up（1弦から6弦へ）, arpeggio（ゆっくり分散させる） }、なければ null
  */
 export function buildChart(score, trackIndex) {
   const settings = new at.Settings();
@@ -108,6 +110,7 @@ export function buildChart(score, trackIndex) {
         const t = tickToSec(startTick);
         const dur = Math.max(0.05, tickToSec(startTick + beat.playbackDuration) - t);
         const ids = [];
+        const strum = strumTicks(beat);
         for (const n of beat.notes) {
           if (n.isTieDestination) {
             // 前の音をのばしているだけ。元の音の長さをここまでのばす
@@ -130,12 +133,16 @@ export function buildChart(score, trackIndex) {
             id, t, dur: n.isStaccato ? Math.max(0.05, dur / 2) : dur, string: guitarString, fret: n.fret, midi, kind,
             grace: grace ? { slot: 0 } : null, staccato: n.isStaccato, letRing: n.isLetRing,
             accent: n.accentuated === at.model.AccentuationType.Heavy ? 2 : n.accentuated === at.model.AccentuationType.Normal ? 1 : 0,
+            strum: strum.has(n) ? tickToSec(startTick + strum.get(n)) - t : 0,
             group: groups.length, bar: bars.length - 1, voice: beat.voice.index,
           });
           idOf.set(n, id);
           ids.push(id);
         }
-        if (ids.length > 0) groups.push({ t, noteIds: ids, bar: bars.length - 1 });
+        const B = at.model.BrushType;
+        const stroke = beat.brushType === B.None ? null
+          : { up: beat.brushType === B.BrushUp || beat.brushType === B.ArpeggioUp, arpeggio: beat.brushType === B.ArpeggioUp || beat.brushType === B.ArpeggioDown };
+        if (ids.length > 0) groups.push({ t, noteIds: ids, bar: bars.length - 1, stroke });
       }
       if (bl === mb.lastBeat) break;
     }
@@ -144,8 +151,8 @@ export function buildChart(score, trackIndex) {
   const merged = [];
   for (const g of groups) {
     const prev = merged[merged.length - 1];
-    if (prev && Math.abs(prev.t - g.t) < 0.005) prev.noteIds.push(...g.noteIds);
-    else merged.push({ t: g.t, noteIds: [...g.noteIds], bar: g.bar });
+    if (prev && Math.abs(prev.t - g.t) < 0.005) { prev.noteIds.push(...g.noteIds); prev.stroke ??= g.stroke; }
+    else merged.push({ t: g.t, noteIds: [...g.noteIds], bar: g.bar, stroke: g.stroke });
   }
   merged.forEach((g, i) => g.noteIds.forEach(id => { notes[id].group = i; }));
   merged.forEach(g => { g.grace = g.noteIds.every(id => notes[id].grace); });
@@ -198,4 +205,18 @@ export function buildChart(score, trackIndex) {
       return 60 / seg.bpm;
     },
   };
+}
+
+/**
+ * ストロークで、和音の音ごとに何 tick 遅らせて鳴らすか（alphaTab の再生と同じ割り振り）。
+ * ダウンは低い弦から、アップは高い弦から、brushDuration を音の数で割った間隔で順に鳴らす
+ */
+function strumTicks(beat) {
+  const out = new Map();
+  if (beat.brushType === at.model.BrushType.None) return out;
+  const down = beat.brushType === at.model.BrushType.BrushDown || beat.brushType === at.model.BrushType.ArpeggioDown;
+  const ns = beat.notes.filter(n => !n.isTieDestination).sort((a, b) => down ? a.string - b.string : b.string - a.string);
+  const step = ns.length > 1 ? Math.floor(beat.brushDuration / (ns.length - 1)) : 0;
+  ns.forEach((n, k) => out.set(n, k * step));
+  return out;
 }

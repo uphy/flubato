@@ -63,7 +63,7 @@ export class DemoPlayer {
 
   _play(n) {
     const a = this.audio;
-    const at = Math.max(a.currentTime, this.ctx0 + (n.t - this.song0) / this.rate);
+    const at = Math.max(a.currentTime, this.ctx0 + (n.t + (n.strum ?? 0) - this.song0) / this.rate);
     // 同じ弦で次の音を弾いたら、前の音は止まる（まだ鳴っていれば）
     const prev = this.voices.get(n.string);
     if (prev && at < prev.end) { prev.gain.gain.setTargetAtTime(0, at, 0.012); prev.src.stop(at + 0.1); }
@@ -79,7 +79,7 @@ export class DemoPlayer {
     // 書かれた長さで止める（スタッカートは譜面の時点で半分になっている）。レットリングは同じ弦で次を弾くまで鳴らしっぱなし
     let end = Infinity;
     if (!n.letRing) {
-      end = at + n.dur / this.rate;
+      end = at + Math.max(0.05, n.dur - (n.strum ?? 0)) / this.rate; // ずらして弾いた音も、書かれた終わりで止める
       gain.gain.setTargetAtTime(0, end, n.staccato ? 0.012 : 0.03);
       src.stop(end + 0.2);
     }
