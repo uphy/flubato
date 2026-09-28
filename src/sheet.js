@@ -116,6 +116,7 @@ export class SheetView {
   /**
    * state: { pos（最後に弾いた group）, played: Uint8Array, conf, listening, stumbleBars: Set, demo（譜面の音を再生している）,
    *   review: { data（review.js の結果）, cursor（再生位置の group）, selected } }（振り返りのときだけ）
+   *   song（音ゲーモードでタブ譜を出すときの曲の時刻。この位置に縦線を引き、次に弾く和音もここから決める）
    */
   draw(chart, state) {
     const g = this.ctx, W = this.w, H = this.h;
@@ -140,7 +141,10 @@ export class SheetView {
     const font = `600 ${fs}px ${FONT}`;
     const graceFont = `600 ${Math.round(fs * 0.72)}px ${FONT}`; // 装飾音は小さく
 
-    let next = rv ? rv.cursor ?? rv.selected ?? -1 : Math.min(chart.groups.length - 1, state.pos + 1);
+    const song = state.song ?? null;
+    let next = rv ? rv.cursor ?? rv.selected ?? -1
+      : song !== null ? nextGroupAt(chart, song)
+      : Math.min(chart.groups.length - 1, state.pos + 1);
     // 次に弾くところは本音符で示す（装飾音は弾き逃しても進むので、装飾音で待っているように見せない）
     if (!rv) while (chart.groups[next]?.grace && next < chart.groups.length - 1) next++;
     const curBar = chart.groups[Math.max(0, next)]?.bar ?? 0;
@@ -251,6 +255,16 @@ export class SheetView {
       }
       g.restore();
     });
+
+    // 音ゲーモードの再生位置: 曲の時刻どおりに段の上を動く縦線
+    if (song !== null && state.listening) {
+      const bi = barAtTime(chart, song), ri = this.rowOfBar.get(bi);
+      if (ri !== undefined && visible(ri)) {
+        const top = topOf(ri), x = this.xAtTime(chart, bi, song);
+        g.fillStyle = 'rgba(255,210,74,0.55)';
+        g.fillRect(Math.round(x) - 1, top - upH - stringGap * 1.2, 2, staffH + upH + stringGap * 1.2 + rhythmH + 6 * k);
+      }
+    }
 
     // 音符
     const pill = (x, top, pad = 0) => roundRect(g, x - fs * 0.78 - pad, top - fs * 0.72 - pad, fs * 1.56 + pad * 2, staffH + fs * 1.44 + pad * 2, fs * 0.7);
@@ -514,6 +528,20 @@ export class SheetView {
     return b.x + 18 * this.k + f * (b.w - 30 * this.k);
   }
 
+  /** 小節 i の中の時刻 t の横位置。xAt と違い、和音と和音のあいだも時刻に比例してなめらかに動く（再生位置の線に使う） */
+  xAtTime(chart, i, t) {
+    const b = this.boxOf.get(i), bar = chart.bars[i], p = this.barPos.get(i);
+    const span = (a, z) => Math.min(1, Math.max(0, (t - a) / Math.max(1e-4, z - a)));
+    let f = span(bar.t, bar.end);
+    if (p) {
+      let k = p.ts.length - 1;
+      while (k >= 0 && p.ts[k] > t + 1e-4) k--;
+      if (k < 0) f = p.fr[0] * span(bar.t, p.ts[0]);
+      else f = p.fr[k] + ((p.fr[k + 1] ?? 1) - p.fr[k]) * span(p.ts[k], p.ts[k + 1] ?? bar.end);
+    }
+    return b.x + 18 * this.k + f * (b.w - 30 * this.k);
+  }
+
   /** 画面上の点がどの和音か（なければ null） */
   groupAt(x, y) {
     let best = null, bd = 18;
@@ -557,6 +585,28 @@ function runsOf(chart, key, byValue = false) {
     } else if (!grp.grace) run = null;
   });
   return runs;
+}
+
+/** 時刻 t を含む小節（曲の前なら最初、後なら最後の小節） */
+function barAtTime(chart, t) {
+  let lo = 0, hi = chart.bars.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (chart.bars[mid].t <= t) lo = mid; else hi = mid - 1;
+  }
+  return lo;
+}
+
+/** 時刻 song でいま弾く和音: まだ過ぎていない最初の本音符の和音（ちょうど弾いている和音は少しのあいだ残す） */
+function nextGroupAt(chart, song) {
+  const gs = chart.groups;
+  let lo = 0, hi = gs.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (gs[mid].t < song - 0.06) lo = mid + 1; else hi = mid;
+  }
+  while (gs[lo]?.grace && lo < gs.length - 1) lo++;
+  return Math.min(lo, gs.length - 1);
 }
 
 /** チョーキングの上げ幅の書き方（全音 = full、半音 = 1/2 …）。Guitar Pro のタブ譜と同じ */

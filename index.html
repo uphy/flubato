@@ -469,18 +469,22 @@ body.reviewing #stage { left: 300px; width: calc(100% - 300px); }
     <section>
       <h3>練習モード</h3>
       <div class="set">
-        <div><b>譜面の大きさ <span id="sheet-scale-v"></span></b><p>小さくすると数字と弦の間隔が詰まって、1段に入る小節が増える</p></div>
+        <div><b>譜面の大きさ <span id="sheet-scale-v"></span></b><p>小さくすると数字と弦の間隔が詰まって、1段に入る小節が増える。音ゲーモードをタブ譜で見るときも同じ大きさ</p></div>
         <input type="range" id="sheet-scale" min="60" max="140" step="5">
       </div>
     </section>
     <section>
       <h3>音ゲーモード</h3>
       <div class="set">
+        <div><b>表示</b><p>タブ譜にすると、練習モードと同じ譜面の上を線が進む。速い曲でも数字が動かないので読みやすい</p></div>
+        <select id="game-view"><option value="lane">流れるレーン</option><option value="sheet">タブ譜</option></select>
+      </div>
+      <div class="set">
         <div><b>判定の厳しさ</b><p>どれだけずれても当たりにするか</p></div>
         <select id="strict"><option value="loose">ゆるめ</option><option value="normal">ふつう</option><option value="strict">きびしめ</option></select>
       </div>
       <div class="set">
-        <div><b>音符の間隔</b><p>広げると1音ずつ読みやすく、狭めると先まで見える</p></div>
+        <div><b>音符の間隔</b><p>流れるレーンのとき。広げると1音ずつ読みやすく、狭めると先まで見える</p></div>
         <input type="range" id="zoom" min="120" max="480" step="20">
       </div>
     </section>

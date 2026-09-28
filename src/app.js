@@ -2,7 +2,7 @@ import { loadScore, scoreFromAlphaTex, buildChart, guitarTracks } from './chart.
 import { Judge, DEFAULTS } from './judge.js';
 import { Mic } from './mic.js';
 import { practiceDiag, gameDiag, diagWav, toBase64 } from './diag.js';
-import { View } from './view.js';
+import { View, drawCountIn } from './view.js';
 import { SheetView } from './sheet.js';
 import { Follower } from './follow.js';
 import { Recorder, Take } from './recorder.js';
@@ -30,6 +30,7 @@ const S = {
   score: null, chart: null, trackIndex: 0, judge: null,
   audio: null, mic: null,
   mode: store.get('mode', 'practice'), // 'practice'（譜面がついてくる）| 'game'（音ゲー）
+  gameView: store.get('gameView', 'lane'), // 音ゲーモードの見た目。'lane'（音符が流れてくる）| 'sheet'（練習モードと同じタブ譜の上を線が動く）
   playing: false, song: 0, lastNow: 0, history: [],
   follower: null, listening: false, practiceStart: 0, doneAt: null,
   demo: null, // 練習モードの「再生」（demo.js）
@@ -362,13 +363,31 @@ function tick() {
       const c = countIn(S.range.from), left = Math.ceil((S.range.from - S.song) / c.beat - 1e-6);
       if (left >= 1 && left <= c.n) count = { k: c.n - left + 1, n: c.n };
     }
-    view.draw(S.chart, S.judge, S.song, S.audio?.currentTime ?? 0, {
-      loop: S.range && $('loop').checked ? S.range : null,
-      countIn: count,
-      playing: S.playing,
-    });
+    if (gameSheet()) {
+      sheet.draw(S.chart, { song: S.song, listening: S.playing, played: S.judge ? judgedGroups() : null, conf: 1, pos: -1 });
+      if (count) drawCountIn(sheet.ctx, sheet.w, sheet.h, count);
+    } else {
+      view.draw(S.chart, S.judge, S.song, S.audio?.currentTime ?? 0, {
+        loop: S.range && $('loop').checked ? S.range : null,
+        countIn: count,
+        playing: S.playing,
+      });
+    }
   }
   updateChrome();
+}
+
+/** 音ゲーモードをタブ譜で見せるか。タイミング合わせは線に合わせて弾くので、流れるレーンのまま */
+function gameSheet() { return S.mode === 'game' && S.gameView === 'sheet' && !S.calibrating; }
+
+/** 音ゲーの判定を和音ごとにまとめる（タブ譜の色分け用）。1 = 弾けた、2 = 外した音がある、0 = まだ */
+function judgedGroups() {
+  const st = S.judge.state;
+  return Uint8Array.from(S.chart.groups, grp => {
+    const rs = grp.noteIds.map(id => st[id].result);
+    if (rs.includes('miss')) return 2;
+    return rs.includes('hit') && rs.every(r => r !== null) ? 1 : 0;
+  });
 }
 
 /** ctx 時刻 → 曲内時刻（止まっている間も正しく写す） */
@@ -1121,6 +1140,7 @@ $('clear-data').addEventListener('click', clearAllData);
 $('scrim').addEventListener('click', () => { closeSettings(); closeLibrary(); });
 $('rec-ind').addEventListener('click', toggleRecord);
 $('strict').addEventListener('change', e => store.set('strict', e.target.value));
+$('game-view').addEventListener('change', e => { S.gameView = e.target.value; store.set('gameView', S.gameView); sheet.follow(); });
 $('follow').addEventListener('change', e => store.set('follow', e.target.checked));
 $('calib').addEventListener('click', calibrate);
 // マイクを選び直したら、その場で切り替える（弾いている途中でも、そのまま続けて聞く）
@@ -1155,7 +1175,7 @@ $('stage').addEventListener('mousemove', e => {
   $('stage').style.cursor = can ? 'pointer' : '';
 });
 // 練習・振り返りの譜面は、ホイールや指でなぞって全体を見渡せる
-const sheetShown = () => S.reviewing || S.mode === 'practice';
+const sheetShown = () => S.reviewing || S.mode === 'practice' || gameSheet();
 $('stage').addEventListener('wheel', e => {
   if (!sheetShown()) return;
   e.preventDefault();
@@ -1317,6 +1337,7 @@ $('check-update').addEventListener('click', () => { $('update-state').textConten
 view.pps = store.get('zoom', 240); $('zoom').value = String(view.pps); syncRange($('zoom'));
 sheet.scale = store.get('sheetScale', 1); $('sheet-scale').value = String(Math.round(sheet.scale * 100)); syncSheetScale();
 $('strict').value = store.get('strict', 'normal');
+$('game-view').value = S.gameView;
 $('demo-speed').value = String(store.get('demoSpeed', 100));
 $('follow').checked = store.get('follow', true);
 $('lat').textContent = `${Math.round(S.latency * 1000)}ms`;
