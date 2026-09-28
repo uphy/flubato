@@ -9,7 +9,7 @@ const CLEF_W = 30; // 段の頭の TAB の記号のぶん
 const SIG_W = 26; // 拍子記号のぶんの幅
 const LEGATO_TAGS = { h: 'H', p: 'P', s: 'S' }; // レガートの弧に添える文字（日本の市販譜と同じ大文字）
 const STROKE_W = 0.6; // ストロークの矢印のぶんの幅（和音1つぶんの間隔に対する割合）
-// 和音どうしの間隔の最小（px。「譜面の大きさ」の倍率を掛ける）。狭い画面でも、これより詰めては並べない
+// 音符と音符の横の間隔の最小（px。「譜面の大きさ」の倍率を掛ける）。狭い画面でも、これより詰めては並べない
 export const MIN_GAP_PX = { narrow: 22, normal: 36, wide: 46 };
 const FONT = '-apple-system, system-ui, "Helvetica Neue", sans-serif';
 const SERIF = '"Times New Roman", Times, Georgia, "Noto Serif", serif'; // D.S.・コーダの言葉
@@ -34,7 +34,7 @@ export class SheetView {
     this.target = 0; this.maxScroll = 0; this.rowH = 0;
     this.hits = []; // クリック判定用 { x0, x1, y0, y1, bar }
     this.scale = 1; // 利用者が選んだ大きさ（設定の「譜面の大きさ」）
-    this.spacing = 'normal'; // 和音どうしの間隔の最小（設定の「和音の間隔」。MIN_GAP_PX のキー）
+    this.spacing = 'normal'; // 音符と音符の横の間隔の最小（設定の「音符の間隔」。MIN_GAP_PX のキー）
     this.resize();
   }
 
@@ -79,7 +79,7 @@ export class SheetView {
       let acc = lead;
       this.barPos.set(i, { ts, fr: ws.map(w => { const f = acc / total; acc += w; return f; }) });
       perBar.set(i, total * 0.8);
-      // いちばん狭い和音の間隔が minGap になる幅。和音が1つだけの小節は間隔がないので要らない
+      // いちばん狭い音符の間隔が minGap になる幅（休符も1つと数える）。音符が1つだけの小節は間隔がないので要らない
       if (ts.length > 1) minW.set(i, minGap * total / Math.min(...ws.slice(0, -1)));
     });
     // 拍子記号は曲の頭と、拍子が変わる小節に、小節線のすぐ右に描く。そのぶん小節の頭を空ける
