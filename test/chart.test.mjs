@@ -99,3 +99,9 @@ test('チョーキングは上げ下げの点が付き、タイの先で戻す�
   assert.deepEqual(c.notes[1].bend, [{ t: 0, semis: 2 }, { t: 1, semis: 2 }]);
   assert.equal(c.notes[2].bend, null);
 });
+
+test('シャッフルの小節は、8分の組を 2:1 の長さで鳴らす', () => {
+  const c = buildChart(scoreFromAlphaTex(`\\tempo 60 . \\tf triplet-8th 0.1.8 1.1.8 3.1.8 5.1.8 7.1.2`), 0);
+  const r = x => Math.round(x * 1000) / 1000;
+  assert.deepEqual(c.notes.map(n => [r(n.t), r(n.t + n.dur)]), [[0, 0.667], [0.667, 1], [1, 1.667], [1.667, 2], [2, 4]]);
+});
