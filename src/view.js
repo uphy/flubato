@@ -78,16 +78,11 @@ export class View {
       g.fillStyle = grad; g.fillRect(a, yTop, b - a, yBot - yTop);
     }
 
-    // 拍と小節線
+    // 小節線
     g.font = `700 12px ${FONT}`;
     g.textBaseline = 'middle';
     g.textAlign = 'left';
-    // 拍の線は、近づいてくるのを見て次の拍を先読みできる濃さにする
-    for (const bt of chart.beats) {
-      if (bt.first || bt.t < tMin || bt.t > tMax) continue;
-      g.fillStyle = 'rgba(255,255,255,0.12)';
-      g.fillRect(Math.round(xOf(bt.t)), yTop, 1, yBot - yTop);
-    }
+    // 拍の線は引かない。拍の区切りはリズムの段の連桁で読め、音符の真ん中を通る線は符尾と見分けにくい
     // 小節線は1拍目の音符の手前に引く（五線譜と同じ）。音符に重ねると、上の声部の符尾・小節線・下の声部の符尾が
     // 1本の線につながって見える
     for (const bar of chart.bars) {
