@@ -82,9 +82,10 @@ export class DemoPlayer {
       for (const p of n.bend) src.playbackRate.linearRampToValueAtTime(rate * 2 ** ((p.semis - s0) / 12), at + p.t / this.rate);
     }
     const gain = a.createGain();
-    // 左手だけで鳴らす音は小さく、低音弦は少し太く。強弱記号・アクセント・ゴーストノートで強さを変える
+    // 左手だけで鳴らす音は小さく、低音弦（4〜6弦）は伴奏なので控えめに（低い音は長く響いて積み重なり、メロディを埋めやすい）。
+    // 強弱記号・アクセント・ゴーストノートで強さを変える
     const steps = (n.level ?? 0) + (n.accent ?? 0) + (n.ghost ? GHOST_STEPS : 0);
-    gain.gain.value = (n.kind === 'legato' ? 0.45 : n.string >= 4 ? 0.8 : 0.65) * 10 ** (steps * STEP_DB / 20);
+    gain.gain.value = (n.kind === 'legato' ? 0.45 : n.string >= 4 ? 0.6 : 0.8) * 10 ** (steps * STEP_DB / 20);
     src.connect(gain).connect(this.out);
     src.start(at);
     // 書かれた長さで止める（スタッカートは譜面の時点で半分になっている）。レットリングは同じ弦で次を弾くまで鳴らしっぱなし
@@ -120,7 +121,7 @@ export class DemoPlayer {
  * 遅延の長さは整数なので、少し低めに作って playbackRate で正しい高さに戻す（高い音でも音程がずれない）
  */
 function pluck(sr, hz, tau, soften = 2) {
-  tau ??= Math.max(0.35, Math.min(1.4, 1.1 * Math.pow(110 / hz, 0.5))); // 低い音ほど長く響く
+  tau ??= Math.max(0.35, Math.min(1, 0.8 * Math.pow(110 / hz, 0.35))); // 低い音ほど長く響く（差はつけすぎない）
   const period = sr / hz;
   // 下のループは y[n] = (y[n-L] + y[n-L+1]) / 2 なので、1周は L - 0.5 サンプル
   const L = Math.max(2, Math.floor(period + 0.5));
