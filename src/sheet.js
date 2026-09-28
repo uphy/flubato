@@ -239,7 +239,10 @@ export class SheetView {
         g.fillStyle = stumble ? C.bad : isCur ? C.accent : C.faint;
         g.font = `700 ${Math.max(9, Math.round(11 * k))}px ${FONT}`;
         g.textAlign = 'left';
-        g.fillText(String(chart.bars[b.i].number), b.x + 5 * k, upper - stringGap * 0.75);
+        const bar = chart.bars[b.i];
+        g.fillText(String(bar.number), b.x + 5 * k, upper - stringGap * 0.75);
+        drawDirections(g, bar, bar.jumpTo, b.x + 5 * k + g.measureText(String(bar.number)).width + 6 * k, b.x + b.w - 5 * k,
+          upper - stringGap * 0.75, Math.max(10, Math.round(12 * k)), C.accent);
       }
       // 拍子記号（弦の線は記号のところで切る）
       for (const b of row) {
@@ -668,4 +671,59 @@ function bendLabel(semis) {
   if (q === 4) return 'full';
   const whole = Math.floor(q / 4), frac = ['', '¼', '½', '¾'][q % 4];
   return whole ? `${whole}${frac}` : frac;
+}
+
+/**
+ * D.S.・コーダの記号を書く。目印（𝄋・Coda）は小節番号の右、飛ぶ指示（D.S. al Coda・To Coda）は小節の右端。
+ * 譜面は弾く順に並べているので、この回に実際に飛ぶなら飛び先の小節番号（→ 57）を足す（jumpTo。飛ばない回は null）
+ */
+export function drawDirections(g, bar, jumpTo, xStart, xEnd, y, px, color) {
+  const { start } = bar.directions;
+  const end = [...bar.directions.end];
+  if (jumpTo != null && end.length > 0) end[end.length - 1] += ` → ${jumpTo}`;
+  if (start.length === 0 && end.length === 0) return;
+  g.save();
+  g.fillStyle = color; g.strokeStyle = color;
+  g.font = `700 ${px}px ${FONT}`;
+  g.textBaseline = 'alphabetic';
+  let x = xStart;
+  for (const s of start) x = drawTarget(g, s, x, y, px) + px * 0.5;
+  g.textAlign = 'right';
+  if (end.length) g.fillText(end.join(' '), xEnd, y);
+  g.restore();
+}
+
+/** 目印の記号を x（左端）から描き、右端の x を返す。y は文字の並びの下（ベースライン） */
+function drawTarget(g, kind, x, y, px) {
+  const h = px * 1.1; // 記号の高さ
+  const cy = y - h / 2 + px * 0.05;
+  g.lineWidth = Math.max(1.2, px * 0.11);
+  g.textAlign = 'left';
+  if (kind === 'fine') { g.fillText('Fine', x, y); return x + g.measureText('Fine').width; }
+  const count = kind.endsWith('2') ? 2 : 1;
+  const w = kind.startsWith('segno') ? h * 0.62 : h;
+  for (let i = 0; i < count; i++) {
+    const cx = x + w / 2;
+    if (kind.startsWith('segno')) {
+      // S の字に斜線、左下と右上に点
+      g.font = `italic 700 ${Math.round(h * 1.05)}px Georgia, "Times New Roman", serif`;
+      g.textAlign = 'center';
+      g.fillText('S', cx, y + px * 0.08);
+      g.beginPath(); g.moveTo(cx - w * 0.55, y + px * 0.05); g.lineTo(cx + w * 0.55, y - h + px * 0.05); g.stroke();
+      for (const [dx, dy] of [[-0.45, -0.3], [0.45, 0.3]]) {
+        g.beginPath(); g.arc(cx + dx * w, cy + dy * h, Math.max(1.3, px * 0.1), 0, Math.PI * 2); g.fill();
+      }
+    } else {
+      // 楕円に十字
+      g.beginPath(); g.ellipse(cx, cy, w * 0.3, h * 0.36, 0, 0, Math.PI * 2); g.stroke();
+      g.beginPath(); g.moveTo(cx, cy - h * 0.55); g.lineTo(cx, cy + h * 0.55); g.moveTo(cx - w * 0.5, cy); g.lineTo(cx + w * 0.5, cy); g.stroke();
+    }
+    x += w + px * 0.15;
+  }
+  if (kind.startsWith('coda')) {
+    g.font = `700 ${px}px ${FONT}`; g.textAlign = 'left';
+    g.fillText('Coda', x + px * 0.1, y);
+    x += px * 0.1 + g.measureText('Coda').width;
+  }
+  return x;
 }

@@ -32,6 +32,25 @@ export function setupLabel(chart) {
   return [name === 'レギュラー' ? null : name, chart.capo ? `カポ ${chart.capo}` : null].filter(Boolean).join(' · ');
 }
 
+// D.S.・コーダの記号。目印（飛び先）は小節の頭に記号の形で（segno / segno2 / coda / coda2 / fine）、
+// 飛ぶ指示は小節の終わりに文字で書く。𝄋・𝄌 の文字は端末のフォントに無いことが多いので、記号は描く側で線を引く
+const DIRECTION_TARGETS = { TargetSegno: 'segno', TargetSegnoSegno: 'segno2', TargetCoda: 'coda', TargetDoubleCoda: 'coda2', TargetFine: 'fine' };
+const DIRECTION_JUMPS = {
+  JumpDaCapo: 'D.C.', JumpDaCapoAlCoda: 'D.C. al Coda', JumpDaCapoAlDoubleCoda: 'D.C. al Double Coda', JumpDaCapoAlFine: 'D.C. al Fine',
+  JumpDalSegno: 'D.S.', JumpDalSegnoAlCoda: 'D.S. al Coda', JumpDalSegnoAlDoubleCoda: 'D.S. al Double Coda', JumpDalSegnoAlFine: 'D.S. al Fine',
+  JumpDalSegnoSegno: 'D.S.S.', JumpDalSegnoSegnoAlCoda: 'D.S.S. al Coda', JumpDalSegnoSegnoAlDoubleCoda: 'D.S.S. al Double Coda', JumpDalSegnoSegnoAlFine: 'D.S.S. al Fine',
+  JumpDaCoda: 'To Coda', JumpDaDoubleCoda: 'To Double Coda',
+};
+
+/** 小節の D.S.・コーダの記号を、頭に書くもの（start: 目印）と終わりに書くもの（end: 飛ぶ指示）に分ける */
+export function directionLabels(directions) {
+  const names = [...(directions ?? [])].map(d => at.model.Direction[d]);
+  return {
+    start: names.map(n => DIRECTION_TARGETS[n]).filter(Boolean),
+    end: names.map(n => DIRECTION_JUMPS[n]).filter(Boolean),
+  };
+}
+
 export function loadScore(bytes) {
   const settings = new at.Settings();
   return at.importer.ScoreLoader.loadScoreFromBytes(bytes, settings);
@@ -115,6 +134,7 @@ export function buildChart(score, trackIndex) {
     bars.push({
       t: tickToSec(mb.start), end: tickToSec(mb.end), index: mb.masterBar.index, number: mb.masterBar.index + 1,
       ticks: mb.end - mb.start, num: mb.masterBar.timeSignatureNumerator, den: mb.masterBar.timeSignatureDenominator,
+      directions: directionLabels(mb.masterBar.directions),
     });
     const beatTicks = (TICKS_PER_QUARTER * 4) / mb.masterBar.timeSignatureDenominator;
     for (let k = 0; k < mb.masterBar.timeSignatureNumerator; k++) {
@@ -231,6 +251,9 @@ export function buildChart(score, trackIndex) {
     if (prev.rest && !r.rest) Object.assign(prev, { ...item, strings: prev.strings });
     else if (prev.rest === r.rest && r.duration > prev.duration) Object.assign(prev, { duration: r.duration, dots: r.dots, tuplet: r.tuplet });
   }
+
+  // 再生の順に並べた小節で、次が続きの小節でなければ、ここで飛んでいる（D.S.・コーダ・反復）。飛び先の番号を持たせる
+  bars.forEach((b, i) => { const next = bars[i + 1]; b.jumpTo = next && next.index !== b.index + 1 ? next.number : null; });
 
   const last = bars[bars.length - 1];
   return {
