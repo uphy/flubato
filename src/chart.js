@@ -40,8 +40,10 @@ export function guitarTracks(score) {
 
 /**
  * 譜面を作る。
- * notes: { id, t, dur, string(1=1弦), fret, midi, kind('normal'|'dead'|'harmonic'|'legato'), grace, staccato, letRing, palmMute, accent, tenuto, ghost, level, group, bar, voice（0始まり） }
+ * notes: { id, t, dur, string(1=1弦), fret, midi, kind('normal'|'dead'|'harmonic'|'legato'), grace, staccato, letRing, palmMute, accent, tenuto, ghost, level, bend, group, bar, voice（0始まり） }
  *   dur: 書かれた長さ（タイでつないだ先まで）
+ *   midi: 弾いた瞬間に鳴る高さ（プリベンドなら上げたあとの高さ）
+ *   bend: チョーキングなら [{ t（音の頭から何秒）, semis（押さえたフレットから何半音上げているか） }]、なければ null
  *   grace: 装飾音なら { slot }。slot は本音符までに挟まる装飾音の数（0 = 本音符の直前）
  *   accent: 0 = なし、1 = アクセント（>）、2 = 強いアクセント（マルカート、^）
  *   ghost: ゴーストノート（かっこで囲んで、弱く弾く音）
@@ -127,7 +129,12 @@ export function buildChart(score, trackIndex) {
           if (n.isTieDestination) {
             // 前の音をのばしているだけ。元の音の長さをここまでのばす
             const o = idOf.get(n.tieOrigin);
-            if (o !== undefined) { idOf.set(n, o); notes[o].dur = Math.max(notes[o].dur, t + dur - notes[o].t); }
+            if (o !== undefined) {
+              idOf.set(n, o);
+              notes[o].dur = Math.max(notes[o].dur, t + dur - notes[o].t);
+              // タイの先で戻す・上げ直すチョーキングは、元の音の続きとしてつなぐ
+              if (n.hasBend) notes[o].bend = [...(notes[o].bend ?? [{ t: 0, semis: 0 }]), ...bendPoints(n, t - notes[o].t, dur)];
+            }
             continue;
           }
           const guitarString = stringCount - n.string + 1;
@@ -139,13 +146,15 @@ export function buildChart(score, trackIndex) {
             kind = 'harmonic';
             midi = open + NATURAL_HARMONIC[n.fret];
           } else if (n.isHammerPullDestination || n.isSlurDestination || n.slideOrigin) kind = 'legato';
+          const bend = kind !== 'harmonic' && n.hasBend ? bendPoints(n, 0, dur) : null;
+          if (bend) midi += Math.round(bend[0].semis);
           const id = notes.length;
           // スタッカートは書かれた長さの半分で切る
           notes.push({
             id, t, dur: n.isStaccato ? Math.max(0.05, dur / 2) : dur, string: guitarString, fret: n.fret, midi, kind,
             grace: grace ? { slot: 0 } : null, staccato: n.isStaccato, letRing: n.isLetRing, palmMute: n.isPalmMute,
             accent: n.accentuated === at.model.AccentuationType.Heavy ? 2 : n.accentuated === at.model.AccentuationType.Normal ? 1 : 0,
-            tenuto: n.accentuated === at.model.AccentuationType.Tenuto, ghost: n.isGhost, level: 0,
+            tenuto: n.accentuated === at.model.AccentuationType.Tenuto, ghost: n.isGhost, level: 0, bend,
             strum: strum.has(n) ? tickToSec(startTick + strum.get(n)) - t : 0,
             group: groups.length, bar: bars.length - 1, voice: beat.voice.index,
           });
@@ -272,4 +281,9 @@ function applyDynamics(groups, notes) {
     for (const id of g.noteIds) notes[id].level = g.level;
     delete g.dyn; delete g.cresc;
   }
+}
+
+/** チョーキングの点を、音の頭から t0 秒・長さ dur 秒の音の上の { t, semis } にする（alphaTab の値は 1/4 音単位、位置は 0〜60） */
+function bendPoints(n, t0, dur) {
+  return n.bendPoints.map(p => ({ t: t0 + (p.offset / at.model.BendPoint.MaxPosition) * dur, semis: p.value / 2 }));
 }

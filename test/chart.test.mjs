@@ -91,3 +91,11 @@ test('強弱記号は変わったところにだけ付き、クレッシェン�
   // デクレッシェンドの先に記号がないときは1段階（-1）下げ、そのまま保つ
   assert.deepEqual(c.notes.map(n => n.level), [0, -3, -3, -1.5, 0, 0, -0.5, -1, -1]);
 });
+
+test('チョーキングは上げ下げの点が付き、タイの先で戻す分もつながる。プリベンドは上げた高さで聞き取る', () => {
+  const c = buildChart(scoreFromAlphaTex(`\\tempo 60 . 7.3{b (0 4)}.4 -.3{b (4 0)}.4 7.3{b (4 4)}.4 7.3.4`), 0);
+  assert.deepEqual(c.notes.map(n => n.midi), [62, 64, 62]);
+  assert.deepEqual(c.notes[0].bend, [{ t: 0, semis: 0 }, { t: 1, semis: 2 }, { t: 1, semis: 2 }, { t: 2, semis: 0 }]);
+  assert.deepEqual(c.notes[1].bend, [{ t: 0, semis: 2 }, { t: 1, semis: 2 }]);
+  assert.equal(c.notes[2].bend, null);
+});

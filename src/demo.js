@@ -75,6 +75,12 @@ export class DemoPlayer {
     const src = a.createBufferSource();
     src.buffer = buffer;
     src.playbackRate.value = rate;
+    if (n.bend) {
+      // チョーキング: 弾いた瞬間の高さから、点どうしをまっすぐつないで上げ下げする
+      const s0 = n.bend[0].semis;
+      src.playbackRate.setValueAtTime(rate, at);
+      for (const p of n.bend) src.playbackRate.linearRampToValueAtTime(rate * 2 ** ((p.semis - s0) / 12), at + p.t / this.rate);
+    }
     const gain = a.createGain();
     // 左手だけで鳴らす音は小さく、低音弦は少し太く。強弱記号・アクセント・ゴーストノートで強さを変える
     const steps = (n.level ?? 0) + (n.accent ?? 0) + (n.ghost ? GHOST_STEPS : 0);

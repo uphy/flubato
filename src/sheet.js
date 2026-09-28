@@ -287,6 +287,7 @@ export class SheetView {
         g.fillStyle = color;
         g.font = n.grace ? graceFont : font;
         g.fillText(label, x, y + 1);
+        if (n.bend) this._drawBend(chart, n, x, tw, y - fs * 0.55, top - (chart.bars[grp.bar].voiced ? upH : 0) - stringGap * 0.85, ri, fs, isNext ? C.accent : color);
         const p = this.prevOnString.get(id);
         if (p !== undefined) {
           // レガートの弧（前の音が同じ段にあれば、そこから）
@@ -423,6 +424,63 @@ export class SheetView {
     g.textAlign = 'left';
   }
 
+  /**
+   * チョーキング: 数字の右肩から、上げた音は段の上（yHigh）へ曲線の矢印を引き、上げ幅を書く（Guitar Pro のタブ譜と同じ描き方）。
+   * 戻すところは下向きの矢印。上げたまま次の動きまで保つところは点線。プリベンドは数字の上にまっすぐ立てる。
+   * 矢印1本の幅は詰めて描き、保つところだけ曲の時刻に合わせてのばす
+   */
+  _drawBend(chart, n, x, tw, yLow, yHigh, ri, fs, color) {
+    const g = this.ctx, head = fs * 0.28, curve = fs * 1.1;
+    yHigh = Math.min(yHigh, yLow - fs * 1.1); // 1弦の音でも、上げ下げの矢印が見える長さに
+    // 曲の時刻 → 横位置。次の音の数字に重ならないよう少し手前で止め、段の外に出るなら段の右端で止める
+    const xOfT = t => {
+      let j = n.bar;
+      while (j + 1 < chart.bars.length && chart.bars[j + 1].t <= t) j++;
+      if (this.rowOfBar.get(j) !== ri) { const row = this.rows[ri], last = row[row.length - 1]; return last.x + last.w - fs * 0.3; }
+      return this.xAt(chart, j, t) - fs * 0.6;
+    };
+    const yOf = semis => semis > 0 ? yHigh : yLow;
+    const arrow = (ax, ay, dir) => { // dir: 1 = 上向き
+      g.beginPath(); g.moveTo(ax, ay); g.lineTo(ax - head * 0.55, ay + dir * head); g.lineTo(ax + head * 0.55, ay + dir * head); g.closePath(); g.fill();
+    };
+    const amount = (ax, semis) => {
+      g.font = `600 ${Math.max(9, Math.round(fs * 0.62))}px ${FONT}`; g.textAlign = 'center';
+      g.fillText(bendLabel(semis), ax, yHigh - head - fs * 0.35);
+    };
+    g.save();
+    g.strokeStyle = g.fillStyle = color; g.lineWidth = 1.3;
+    const pts = n.bend;
+    let cx = x + tw / 2; // いまの矢印の根もと
+    if (pts[0].semis > 0) {
+      // プリベンド: 弾く前に上げておく
+      g.beginPath(); g.moveTo(x, yLow); g.lineTo(x, yHigh + head); g.stroke();
+      arrow(x, yHigh, 1); amount(x, pts[0].semis);
+      cx = x;
+    }
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i], b = pts[i + 1];
+      if (a.semis === b.semis) {
+        // 保つ: 次に動くところまで点線（最後まで保つだけなら描かない）
+        const moves = pts.slice(i + 1).some(p => p.semis !== b.semis);
+        if (a.semis > 0 && moves) {
+          const bx = Math.max(cx + fs * 0.3, xOfT(n.t + b.t) - curve);
+          g.setLineDash([3, 3]); g.beginPath(); g.moveTo(cx, yHigh); g.lineTo(bx, yHigh); g.stroke(); g.setLineDash([]);
+          cx = bx;
+        }
+        continue;
+      }
+      const up = b.semis > a.semis, y0 = yOf(a.semis), y1 = yOf(b.semis), bx = cx + curve * (y0 === y1 ? 0.6 : 1);
+      g.beginPath(); g.moveTo(cx, y0);
+      if (y0 === y1) g.lineTo(bx, y1); // 上げた高さのままさらに上げる・少し戻す
+      else { g.quadraticCurveTo(bx, y0, bx, y1 + (up ? head : -head)); }
+      g.stroke();
+      if (y0 !== y1) arrow(bx, y1, up ? 1 : -1);
+      if (up || y0 === y1) amount(bx, b.semis);
+      cx = bx;
+    }
+    g.restore();
+  }
+
   /** 手で譜面を上下に動かす（px、正で先の段へ） */
   scrollBy(px) {
     if (!this.rowH) return;
@@ -499,4 +557,12 @@ function runsOf(chart, key, byValue = false) {
     } else if (!grp.grace) run = null;
   });
   return runs;
+}
+
+/** チョーキングの上げ幅の書き方（全音 = full、半音 = 1/2 …）。Guitar Pro のタブ譜と同じ */
+function bendLabel(semis) {
+  const q = Math.round(semis * 2); // 1/4 音単位
+  if (q === 4) return 'full';
+  const whole = Math.floor(q / 4), frac = ['', '¼', '½', '¾'][q % 4];
+  return whole ? `${whole}${frac}` : frac;
 }
