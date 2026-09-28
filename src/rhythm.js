@@ -46,6 +46,8 @@ function drawSide(g, chart, items, xOf, base, s, stemFrom) {
     } else cur = null;
   }
   const beamed = new Set(beams.filter(bm => bm.items.length > 1).flatMap(bm => bm.items));
+  const beamLevels = new Map(); // 連桁で組む音符 → そのまとまりの桁の本数
+  for (const bm of beams) for (const r of bm.items) beamLevels.set(r, Math.max(...bm.items.map(q => flags(q.duration))));
 
   for (const r of items) {
     const x = xOf(r);
@@ -64,8 +66,10 @@ function drawSide(g, chart, items, xOf, base, s, stemFrom) {
         shapes.push([...bezier(P(0.6, 0), P(1.5, 4), P(13.5, 6), P(6.5, 17)), ...bezier(P(5.2, 16), P(9.5, 9.5), P(3, 7), P(0.6, 5)).slice(1)]);
       }
     }
-    const dotX = x + (beamed.has(r) || r.duration < 8 ? 6 : 13); // 旗があれば旗の右
-    for (let k = 0; k < r.dots; k++) shapes.push(circle(dotX + 1 + k * 6, Y(end - 2), 2.6));
+    // 付点: 旗があれば旗の右。連桁があれば、右へ伸びる連桁と重ならないよう、いちばん内側の桁より段の端側へ下げる
+    const dotX = x + (beamed.has(r) || r.duration < 8 ? 6 : 13);
+    const dotOff = beamed.has(r) ? y1 - 5 * (beamLevels.get(r) - 1) - 7 : end - 2;
+    for (let k = 0; k < r.dots; k++) shapes.push(circle(dotX + 1 + k * 6, Y(dotOff), 2.6));
     fillShapes(g, shapes);
   }
   // 連桁（16分なら2本目も。隣と組めない16分は短い桁）
