@@ -53,7 +53,7 @@ export class View {
   }
 
   /**
-   * opts: { loop: { from, to }（くり返しの範囲）, countIn: { k（何拍目）, n（何拍数えるか）}（数える間だけ）,
+   * opts: { loop: { from, to }（くり返しの範囲）, countIn: { left（あと何拍）, n（何拍数えるか）}（数える間だけ）,
    *         playing（進んでいる間だけ、拍で判定ラインを光らせる） }
    */
   draw(chart, judge, song, now, opts = {}) {
@@ -241,21 +241,21 @@ export class View {
   }
 }
 
-/** カウント（1小節ぶん）。1, 2, 3 と数え上げ、何拍数えるかを点で見せる。音ゲーモードのタブ譜の表示でも使う */
-export function drawCountIn(g, W, H, { k, n }) {
+/** カウント（1小節ぶん）。拍子によらず …3, 2, 1 と数え下げ、残りの拍を点で見せる（1 の次が曲の頭）。音ゲーモードのタブ譜の表示でも使う */
+export function drawCountIn(g, W, H, { left, n }) {
   const size = Math.round(Math.min(140, H * 0.26));
   g.save();
   g.textAlign = 'center'; g.textBaseline = 'middle';
   g.fillStyle = 'rgba(14,16,22,0.82)';
   g.fillRect(0, 0, W, H);
-  g.fillStyle = k === n ? '#ffffff' : '#ffd24a';
+  g.fillStyle = left === 1 ? '#ffffff' : '#ffd24a';
   g.font = `800 ${size}px ${FONT}`;
-  g.fillText(String(k), W / 2, H / 2);
+  g.fillText(String(left), W / 2, H / 2);
   const r = 7, gap = 26, y = H / 2 + size * 0.7;
   for (let i = 1; i <= n; i++) {
     const x = W / 2 + (i - (n + 1) / 2) * gap;
-    g.beginPath(); g.arc(x, y, i === 1 ? r + 1.5 : r, 0, Math.PI * 2);
-    if (i <= k) { g.fillStyle = '#ffd24a'; g.fill(); }
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2);
+    if (i > n - left) { g.fillStyle = '#ffd24a'; g.fill(); }
     else { g.strokeStyle = 'rgba(255,210,74,0.5)'; g.lineWidth = 1.5; g.stroke(); }
   }
   g.restore();
