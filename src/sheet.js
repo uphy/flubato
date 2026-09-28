@@ -382,7 +382,10 @@ export class SheetView {
         g.strokeStyle = g.fillStyle = isNext ? C.accent : played === 1 ? C.played : C.ink;
         g.lineWidth = 1.3; g.beginPath(); g.moveTo(sx, from);
         const dir = Math.sign(to - from), len = Math.abs(to - from);
-        for (let d = 0; d <= len; d += 1) g.lineTo(sx + amp * Math.sin((d / wave) * Math.PI * 2), from + dir * d);
+        // 波の数を整数の半波にそろえ、波線が真ん中（振れ幅0）で終わって矢じりの頂点とまっすぐつながるように
+        const half = len / Math.max(1, Math.round(len / (wave / 2)));
+        const steps = Math.ceil(len);
+        for (let i = 0; i <= steps; i++) { const d = len * i / steps; g.lineTo(sx + amp * Math.sin((d / half) * Math.PI), from + dir * d); }
         g.stroke();
         const tip = grp.stroke.up ? y1 : y0;
         g.beginPath(); g.moveTo(sx, tip); g.lineTo(sx + head * 0.6, tip - dir * head); g.lineTo(sx - head * 0.6, tip - dir * head); g.closePath(); g.fill();
