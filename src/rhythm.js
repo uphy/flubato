@@ -61,7 +61,7 @@ function drawSide(g, chart, items, xOf, base, s, stemFrom) {
       for (let k = 0; k < flags(r.duration); k++) {
         // 外側の線で先端から尾まで、内側の線で符尾へ戻る。根元が太く、尾は細く符尾側へ巻き戻る
         const o = y1 - k * 5, P = (dx, back) => [x + dx, Y(o - back)];
-        shapes.push([...bezier(P(0.6, 0), P(1.5, 4), P(12, 5), P(6, 14)), ...bezier(P(6.8, 13.6), P(10, 7.5), P(2.5, 6.5), P(0.6, 5)).slice(1)]);
+        shapes.push([...bezier(P(0.6, 0), P(1.5, 4), P(13.5, 6), P(6.5, 17)), ...bezier(P(5.2, 16), P(9.5, 9.5), P(3, 7), P(0.6, 5)).slice(1)]);
       }
     }
     const dotX = x + (beamed.has(r) || r.duration < 8 ? 6 : 13); // 旗があれば旗の右
