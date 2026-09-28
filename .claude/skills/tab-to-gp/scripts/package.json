@@ -1,0 +1,11 @@
+{
+  "name": "tab-to-gp-scripts",
+  "private": true,
+  "type": "module",
+  "description": "tab-to-gp skill の補助スクリプト。flubato 本体の依存とは分けてある（alphaSkia が OS ごとのパッケージを要るため）",
+  "dependencies": {
+    "@coderline/alphatab": "^1.8.4",
+    "@coderline/alphaskia": "^3.5.147",
+    "@coderline/alphaskia-macos": "^3.5.147"
+  }
+}
