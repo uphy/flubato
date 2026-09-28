@@ -118,7 +118,8 @@ export class SheetView {
     const stringGap = Math.min(24, Math.max(14, areaH / 24)) * k;
     const staffH = stringGap * n1;
     const rhythmH = RHYTHM_H * k;
-    const rowH = staffH + rhythmH + stringGap * 2.6 + 24 * k; // 下にリズム（符尾・連桁）の段と、段のあいだ
+    const upH = chart.voiced ? rhythmH : 0; // 声部が2つある曲は、上にも上の声部の符尾の段
+    const rowH = staffH + rhythmH + upH + stringGap * 2.6 + 24 * k; // 下にリズム（符尾・連桁）の段と、段のあいだ
     const padTop = stringGap * 1.6 + 8;
     const fs = Math.max(9, Math.round(stringGap * 0.8));
     const font = `600 ${fs}px ${FONT}`;
@@ -143,8 +144,8 @@ export class SheetView {
       this.vel *= 0.94;
       if (Math.abs(this.vel) < 0.002) this.vel = 0;
     }
-    const topOf = ri => padTop + (ri - this.scroll) * rowH;
-    const visible = ri => { const t = topOf(ri); return t < areaH + stringGap && t + rowH > 0; };
+    const topOf = ri => padTop + upH + (ri - this.scroll) * rowH;
+    const visible = ri => { const t = topOf(ri); return t < areaH + stringGap + upH && t + rowH > 0; };
 
     this.hits = [];
     this.groupHits = [];
@@ -181,16 +182,17 @@ export class SheetView {
       for (const b of row) {
         const isCur = b.i === curBar && (state.listening || rv);
         const stumble = state.stumbleBars?.has(b.i);
+        const upper = top - upH; // 上の声部の符尾の段のぶん上から
         if (isCur || stumble) {
           g.fillStyle = stumble ? C.badSoft : state.listening ? C.accentSoft : C.hover;
-          roundRect(g, b.x + 1, top - stringGap * 1.2, b.w - 2, staffH + stringGap * 1.2 + rhythmH + 8 * k, 8 * k);
+          roundRect(g, b.x + 1, upper - stringGap * 1.2, b.w - 2, staffH + upH + stringGap * 1.2 + rhythmH + 8 * k, 8 * k);
           g.fill();
         }
-        this.hits.push({ x0: b.x, x1: b.x + b.w, y0: top - stringGap * 1.4, y1: bot + rhythmH + 8, bar: b.i });
+        this.hits.push({ x0: b.x, x1: b.x + b.w, y0: upper - stringGap * 1.4, y1: bot + rhythmH + 8, bar: b.i });
         g.fillStyle = stumble ? C.bad : isCur ? C.accent : C.faint;
         g.font = `700 ${Math.max(9, Math.round(11 * k))}px ${FONT}`;
         g.textAlign = 'left';
-        g.fillText(String(chart.bars[b.i].number), b.x + 5 * k, top - stringGap * 0.75);
+        g.fillText(String(chart.bars[b.i].number), b.x + 5 * k, upper - stringGap * 0.75);
       }
       // 弦（数字のところは切る）
       g.strokeStyle = C.string; g.lineWidth = 1;
@@ -219,9 +221,18 @@ export class SheetView {
         g.fillStyle = C.bg; g.fillRect(x0 + CLEF_W * k / 2 - ch * 0.5, y - ch * 0.5, ch, ch);
         g.fillStyle = C.clef; g.fillText(c, x0 + CLEF_W * k / 2, y + 0.5);
       });
-      // リズムは rhythm.js の寸法のまま描いて、段の下端を原点に k 倍する
-      g.save(); g.translate(0, bot + fs * 0.3); g.scale(k, k);
-      for (const b of row) drawRhythm(g, chart, chart.rhythm.filter(r => r.bar === b.i), r => this.xAt(chart, b.i, r.t) / k, 0, C.rhythm);
+      // リズムは rhythm.js の寸法のまま描いて、段の下端を原点に k 倍する。符尾は数字の上下の端から
+      const o = bot + fs * 0.3, local = y => (y - o) / k;
+      const stemFrom = r => {
+        if (!r.strings.length) return undefined;
+        const s = r.up ? Math.min(...r.strings) : Math.max(...r.strings);
+        return local(top + (s - 1) * stringGap + (r.up ? -1 : 1) * fs * 0.55);
+      };
+      g.save(); g.translate(0, o); g.scale(k, k);
+      for (const b of row) {
+        drawRhythm(g, chart, chart.rhythm.filter(r => r.bar === b.i), r => this.xAt(chart, b.i, r.t) / k,
+          { L: 0, T: local(top - fs * 0.3), stemFrom }, C.rhythm);
+      }
       g.restore();
     });
 
@@ -231,7 +242,7 @@ export class SheetView {
       const played = state.played?.[gi];
       const isNext = gi === next && (state.listening || !!rv);
       const R = rv?.data.groups[gi];
-      this.groupHits.push({ x, y0: top - 8, y1: top + staffH + 14 + rhythmH, g: gi });
+      this.groupHits.push({ x, y0: top - 8 - upH, y1: top + staffH + 14 + rhythmH, g: gi });
       if (isNext) {
         g.save();
         g.shadowColor = 'rgba(255,210,74,0.45)'; g.shadowBlur = 16;
@@ -281,10 +292,11 @@ export class SheetView {
           g.stroke(); g.setLineDash([]);
         }
       }
-      // スタッカートの点。和音ごとに1つ、段の上に（Guitar Pro のタブ譜と同じ置き方）
+      // スタッカートの点。和音ごとに1つ、段の上に（Guitar Pro のタブ譜と同じ置き方）。上の声部の符尾があれば、その上に
       if (notes.some(({ n }) => n.staccato)) {
         g.fillStyle = played === 1 && !isNext ? C.played : C.ink;
-        g.beginPath(); g.arc(x, top - stringGap * 1.1, Math.max(1.8, fs * 0.13), 0, Math.PI * 2); g.fill();
+        const dy = chart.bars[grp.bar].voiced ? upH : 0;
+        g.beginPath(); g.arc(x, top - dy - stringGap * 1.1, Math.max(1.8, fs * 0.13), 0, Math.PI * 2); g.fill();
       }
       // 和音の下に、どう悪かったかを1文字で
       const tags = (R?.marks ?? []).map(m => MARK_TAGS[m.kind]).filter(Boolean);

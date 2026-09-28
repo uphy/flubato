@@ -25,13 +25,14 @@ export class View {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  layout(stringCount) {
+  layout(stringCount, voiced = false) {
     // 背の高い画面で弦の間隔を広げすぎると、目を上下に大きく動かすことになる。
     // 間隔に上限を付けて、レーンを縦の真ん中に置く
-    const gap = Math.max(18, Math.min(54, (this.h - 34 - RHYTHM_H - 40) / stringCount));
+    const upH = voiced ? RHYTHM_H : 0; // 声部が2つある曲は、上にも上の声部の符尾の段
+    const gap = Math.max(18, Math.min(54, (this.h - 34 - upH - RHYTHM_H - 40) / stringCount));
     const lanesH = gap * stringCount;
-    const top = Math.max(0, (this.h - (34 + lanesH + RHYTHM_H + 20)) / 2); // 下にリズム（符尾・連桁）の段
-    const laneTop = top + 34;
+    const top = Math.max(0, (this.h - (34 + upH + lanesH + RHYTHM_H + 20)) / 2); // 下にリズム（符尾・連桁）の段
+    const laneTop = top + 34 + upH;
     const lanes = [];
     for (let i = 0; i < stringCount; i++) lanes.push(laneTop + gap * (i + 0.5));
     return { top, bottom: laneTop + lanesH + RHYTHM_H + 6, lanes, gap, hitX: this.w < 600 ? 90 : Math.max(120, this.w * 0.22), noteH: Math.min(36, gap * 0.74) };
@@ -47,11 +48,12 @@ export class View {
    */
   draw(chart, judge, song, now, opts = {}) {
     const g = this.ctx, W = this.w, H = this.h;
-    const L = this.layout(chart.stringCount);
+    const L = this.layout(chart.stringCount, chart.voiced);
     g.clearRect(0, 0, W, H);
     g.fillStyle = BG;
     g.fillRect(0, 0, W, H);
     const xOf = t => L.hitX + (t - song) * this.pps;
+    const nh = L.noteH, nw = Math.max(nh * 1.2, 28); // 音符の高さと幅
     const tMin = song - L.hitX / this.pps - 0.5, tMax = song + (W - L.hitX) / this.pps + 0.5;
     const yTop = L.lanes[0] - L.gap / 2, yBot = L.lanes[L.lanes.length - 1] + L.gap / 2;
 
@@ -76,23 +78,22 @@ export class View {
       g.fillStyle = grad; g.fillRect(a, yTop, b - a, yBot - yTop);
     }
 
-    // 拍と小節線
+    // 小節線
     g.font = `700 12px ${FONT}`;
     g.textBaseline = 'middle';
     g.textAlign = 'left';
-    // 拍の線は、近づいてくるのを見て次の拍を先読みできる濃さにする
-    for (const bt of chart.beats) {
-      if (bt.first || bt.t < tMin || bt.t > tMax) continue;
-      g.fillStyle = 'rgba(255,255,255,0.12)';
-      g.fillRect(Math.round(xOf(bt.t)), yTop, 1, yBot - yTop);
-    }
+    // 拍の線は引かない。拍の区切りはリズムの段の連桁で読め、音符の真ん中を通る線は符尾と見分けにくい
+    // 小節線は1拍目の音符の手前に引く（五線譜と同じ）。音符に重ねると、上の声部の符尾・小節線・下の声部の符尾が
+    // 1本の線につながって見える
     for (const bar of chart.bars) {
       if (bar.t < tMin - 10 || bar.t > tMax) continue;
-      const x = Math.round(xOf(bar.t));
-      g.fillStyle = 'rgba(255,255,255,0.32)';
-      g.fillRect(x - 1, yTop - 10, 2, yBot - yTop + 10);
+      const x = Math.round(xOf(bar.t) - nw / 2 - 6);
+      // 1弦から6弦までのあいだだけに、弦より目立たない濃さで
+      const y0 = L.lanes[0], y1 = L.lanes[L.lanes.length - 1];
+      g.fillStyle = 'rgba(255,255,255,0.16)';
+      g.fillRect(x, y0, 1, y1 - y0);
       g.fillStyle = 'rgba(236,238,243,0.45)';
-      g.fillText(String(bar.number), x + 6, yTop - 12);
+      g.fillText(String(bar.number), x + 6, yTop - 12 - (chart.voiced ? RHYTHM_H : 0));
     }
 
     // 弦（低い弦ほど太く）
@@ -104,20 +105,29 @@ export class View {
 
     // リズム（見えている小節ぶん。連符の数字の区切りが画面の端でずれないように小節ごと）
     const visBars = new Set(chart.bars.map((b, i) => (b.end >= tMin && b.t <= tMax ? i : -1)).filter(i => i >= 0));
-    drawRhythm(g, chart, chart.rhythm.filter(r => visBars.has(r.bar)), r => xOf(r.t), yBot - 4, 'rgba(236,238,243,0.4)');
+    // 符尾は音符の上下の端から（音符は後から重ねて描く）
+    const stemFrom = r => {
+      if (!r.strings.length) return undefined;
+      const s = r.up ? Math.min(...r.strings) : Math.max(...r.strings);
+      return L.lanes[s - 1] + (r.up ? -1 : 1) * L.noteH / 2;
+    };
+    drawRhythm(g, chart, chart.rhythm.filter(r => visBars.has(r.bar)), r => xOf(r.t), { L: yBot - 4, T: yTop + 4, stemFrom }, 'rgba(236,238,243,0.4)');
 
-    // 和音のつなぎ線
+    // 和音のつなぎ線。声部ごとに引く（メロディと低音をつなぐと、1つの和音に見える）
     for (const grp of chart.groups) {
       if (grp.t < tMin || grp.t > tMax || grp.noteIds.length < 2) continue;
-      const ys = grp.noteIds.map(id => L.lanes[chart.notes[id].string - 1]);
       const x = xOf(grp.t);
       g.strokeStyle = 'rgba(255,255,255,0.28)';
       g.lineWidth = 2;
-      g.beginPath(); g.moveTo(x, Math.min(...ys)); g.lineTo(x, Math.max(...ys)); g.stroke();
+      const ns = grp.noteIds.map(id => chart.notes[id]);
+      for (const v of new Set(ns.map(n => n.voice))) {
+        const ys = ns.filter(n => n.voice === v).map(n => L.lanes[n.string - 1]);
+        if (ys.length < 2) continue;
+        g.beginPath(); g.moveTo(x, Math.min(...ys)); g.lineTo(x, Math.max(...ys)); g.stroke();
+      }
     }
 
     // 音符（後ろから描く）
-    const nh = L.noteH, nw = Math.max(nh * 1.2, 28);
     g.font = `700 ${Math.round(nh * 0.62)}px ${FONT}`;
     g.textAlign = 'center';
     // 装飾音は本音符とほとんど同じ時刻なので、そのまま置くと本音符の箱に重なって隠してしまう。

@@ -404,7 +404,7 @@ function onFrame(centerCtx, spec, flux) {
   if (following()) S.flex.step(centerCtx - lat, songAt, spec, flux, speed());
   if (events.length === 0) return;
   const now = S.audio.currentTime;
-  const L = view.layout(S.chart.stringCount);
+  const L = view.layout(S.chart.stringCount, S.chart.voiced);
   for (const e of events) if (e.result === 'hit') view.hitFx(S.chart.notes[e.id], L, now);
   updateStats();
 }

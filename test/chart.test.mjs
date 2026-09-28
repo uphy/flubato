@@ -44,3 +44,15 @@ test('スタッカートは印が付き、長さが半分になる', () => {
   const c = buildChart(scoreFromAlphaTex(`\\tempo 60 . 3.3{st}.4 3.3.4 (0.1{st} 0.2{st}).2`), 0);
   assert.deepEqual(c.notes.map(n => [n.staccato, n.dur]), [[true, 0.5], [false, 1], [true, 1], [true, 1]]);
 });
+
+test('音の入ったボイスが2つある小節だけ、リズムを上下の符尾に分ける', () => {
+  const eighths = Array(8).fill('0.1.8').join(' ');
+  // 1小節目: 1弦を8分で刻み、6弦・5弦を2分でのばす。2小節目: ボイス2は休符だけ
+  const c = buildChart(scoreFromAlphaTex(`\\tempo 120 . \\track "G" \\staff {tabs} \\voice ${eighths} | 0.1.1 \\voice 0.6.2 (2.5 2.4).2 | r.1`), 0);
+  assert.deepEqual(c.bars.map(b => b.voiced), [true, false]);
+  assert.equal(c.voiced, true);
+  const bar0 = c.rhythm.filter(r => r.bar === 0);
+  assert.deepEqual(bar0.filter(r => r.up).map(r => [r.duration, r.strings]), Array(8).fill([8, [1]]));
+  assert.deepEqual(bar0.filter(r => !r.up).map(r => [r.duration, r.strings.sort()]), [[2, [6]], [2, [4, 5]]]);
+  assert.deepEqual(c.rhythm.filter(r => r.bar === 1).map(r => [r.up, r.duration, r.rest]), [[false, 1, false]], '休符だけのボイスは描かない');
+});
