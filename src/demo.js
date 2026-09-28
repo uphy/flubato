@@ -4,7 +4,8 @@ import { midiToHz } from './dsp.js';
 
 const LOOKAHEAD = 0.25; // 何秒先の音まで予約しておくか（画面が止まっても音が途切れないように）
 const LEAD = 0.1; // 押してから最初の音までの間
-const ACCENT_GAIN = [1, 1.4, 1.7]; // アクセントなし・アクセント・強いアクセント
+const STEP_DB = 3; // 強弱の1段階（mf → f、アクセント1つ）ごとに何 dB 変えるか
+const GHOST_STEPS = -2; // ゴーストノートは2段階弱く
 
 export class DemoPlayer {
   constructor(audio) {
@@ -25,7 +26,10 @@ export class DemoPlayer {
     this.chart = chart;
     this.out = a.createGain();
     this.out.gain.value = 0.5;
-    this.out.connect(a.destination);
+    // ff の和音やアクセントを重ねたときに割れないよう、大きいところだけ抑える
+    const comp = a.createDynamicsCompressor();
+    comp.threshold.value = -6; comp.knee.value = 6; comp.ratio.value = 8;
+    this.out.connect(comp).connect(a.destination);
     this.ctx0 = a.currentTime + LEAD;
     this.song0 = from;
     this.next = chart.notes.findIndex(n => n.t >= from - 1e-6);
@@ -72,8 +76,9 @@ export class DemoPlayer {
     src.buffer = buffer;
     src.playbackRate.value = rate;
     const gain = a.createGain();
-    // 左手だけで鳴らす音は小さく、低音弦は少し太く。アクセントは強く
-    gain.gain.value = (n.kind === 'legato' ? 0.45 : n.string >= 4 ? 0.8 : 0.65) * ACCENT_GAIN[n.accent ?? 0];
+    // 左手だけで鳴らす音は小さく、低音弦は少し太く。強弱記号・アクセント・ゴーストノートで強さを変える
+    const steps = (n.level ?? 0) + (n.accent ?? 0) + (n.ghost ? GHOST_STEPS : 0);
+    gain.gain.value = (n.kind === 'legato' ? 0.45 : n.string >= 4 ? 0.8 : 0.65) * 10 ** (steps * STEP_DB / 20);
     src.connect(gain).connect(this.out);
     src.start(at);
     // 書かれた長さで止める（スタッカートは譜面の時点で半分になっている）。レットリングは同じ弦で次を弾くまで鳴らしっぱなし
@@ -87,11 +92,14 @@ export class DemoPlayer {
   }
 
   _sound(n) {
-    const kind = n.kind === 'dead' || n.kind === 'harmonic' ? n.kind : 'normal';
+    const kind = n.kind === 'dead' || n.kind === 'harmonic' ? n.kind : n.palmMute ? 'mute' : 'normal';
     const key = `${kind}:${n.midi}`;
     if (!this.cache.has(key)) {
       const sr = this.audio.sampleRate, hz = midiToHz(n.midi);
-      const { data, rate } = kind === 'harmonic' ? bell(sr, hz) : pluck(sr, hz, kind === 'dead' ? 0.02 : null);
+      // ブリッジミュート（P.M.）は、すぐ減って高い成分の少ない、こもった音
+      const { data, rate } = kind === 'harmonic' ? bell(sr, hz)
+        : kind === 'mute' ? pluck(sr, hz, 0.12, 8)
+        : pluck(sr, hz, kind === 'dead' ? 0.02 : null);
       const buffer = this.audio.createBuffer(1, data.length, sr);
       buffer.copyToChannel(data, 0);
       this.cache.set(key, { buffer, rate });
@@ -102,9 +110,10 @@ export class DemoPlayer {
 
 /**
  * 弦を弾いた音（Karplus-Strong）。tau は音が 1/e になるまでの秒（null なら音の高さで決める）。
+ * soften は、はじめの雑音をならす回数（多いほど高い成分が減って、こもった音になる）。
  * 遅延の長さは整数なので、少し低めに作って playbackRate で正しい高さに戻す（高い音でも音程がずれない）
  */
-function pluck(sr, hz, tau) {
+function pluck(sr, hz, tau, soften = 2) {
   tau ??= Math.max(0.35, Math.min(1.4, 1.1 * Math.pow(110 / hz, 0.5))); // 低い音ほど長く響く
   const period = sr / hz;
   // 下のループは y[n] = (y[n-L] + y[n-L+1]) / 2 なので、1周は L - 0.5 サンプル
@@ -116,7 +125,7 @@ function pluck(sr, hz, tau) {
   const buf = new Float32Array(L);
   for (let k = 0; k < L; k++) buf[k] = rand();
   // 指で弾いたやわらかい音にするため、はじめの雑音の高い成分を削る
-  for (let pass = 0; pass < 2; pass++) for (let k = 1; k < L; k++) buf[k] = 0.5 * (buf[k] + buf[k - 1]);
+  for (let pass = 0; pass < soften; pass++) for (let k = 1; k < L; k++) buf[k] = 0.5 * (buf[k] + buf[k - 1]);
   const mean = buf.reduce((s, v) => s + v, 0) / L;
   for (let k = 0; k < L; k++) buf[k] -= mean;
   const decay = Math.exp(-(L - 0.5) / (tau * sr)); // 1周ごとの減り方
