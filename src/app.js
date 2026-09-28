@@ -1,4 +1,4 @@
-import { loadScore, scoreFromAlphaTex, buildChart, guitarTracks } from './chart.js';
+import { loadScore, scoreFromAlphaTex, buildChart, guitarTracks, setupLabel } from './chart.js';
 import { Judge, DEFAULTS } from './judge.js';
 import { Mic } from './mic.js';
 import { practiceDiag, gameDiag, diagWav, toBase64 } from './diag.js';
@@ -89,15 +89,17 @@ function setTrack(index) {
   updateBackButton();
   updateStats();
   $('song-meta').textContent = songMeta(S.chart);
+  // 変則チューニングとカポは、弾く前に合わせないと1音も当たらない。細い画面でも消さず、押すとチューナーを開く
+  const setup = setupLabel(S.chart);
+  $('setup-btn').hidden = !setup;
+  $('setup-btn').querySelector('.lbl').textContent = setup ?? '';
 }
 
-/** 曲の下に出す1行: 小節数・テンポ・拍子・チューニング・カポ */
+/** 曲の下に出す1行: 小節数・テンポ・拍子（チューニングとカポは #setup-btn に出す） */
 function songMeta(c) {
-  const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-  const tuning = [...c.tuning].reverse().map(m => names[m % 12]).join(' ');
   const b = c.bars[0];
-  return [`${new Set(c.bars.map(x => x.index)).size}小節`, `♩=${Math.round(c.tempo)}`, b && `${b.num}/${b.den}`,
-    tuning === 'E A D G B E' ? 'レギュラー' : tuning, c.capo ? `カポ ${c.capo}` : null].filter(Boolean).join('  ·  ');
+  return [`${new Set(c.bars.map(x => x.index)).size}小節`, `♩=${Math.round(c.tempo)}`, b && `${b.num}/${b.den}`]
+    .filter(Boolean).join('  ·  ');
 }
 
 async function openFile(file) {
@@ -1073,14 +1075,39 @@ function tunerTick(now) {
   showTuner(S.tuner.read(now));
 }
 
+const STRING_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+/**
+ * 鳴っている音を、曲のチューニングのいちばん近い弦に当てる。レギュラーから DADGAD に変えるときのように
+ * 半音以上離れていれば、どちらへ何半音回すかを出す
+ */
+function tuneTarget(hz) {
+  const tuning = S.chart?.tuning;
+  if (!tuning) return null;
+  const m = 69 + 12 * Math.log2(hz / 440);
+  let s = 0;
+  tuning.forEach((t, i) => { if (Math.abs(m - t) < Math.abs(m - tuning[s])) s = i; });
+  return { string: s + 1, midi: tuning[s], off: m - tuning[s] };
+}
+
 function showTuner(r) {
-  const cents = r ? Math.max(-50, Math.min(50, r.note.cents)) : 0;
+  const tg = r && tuneTarget(r.hz);
+  const far = tg && Math.abs(tg.off) >= 0.5;
+  const cents = far ? Math.sign(tg.off) * 50 : r ? Math.max(-50, Math.min(50, r.note.cents)) : 0;
   $('tn-needle').style.transform = `rotate(${cents * 1.2}deg)`;
-  $('tuner').dataset.state = !r ? 'none' : Math.abs(r.note.cents) <= 5 ? 'ok' : 'off';
+  $('tuner').dataset.state = !r ? 'none' : !far && Math.abs(r.note.cents) <= 5 ? 'ok' : 'off';
   $('tn-note').innerHTML = r ? `${r.note.name}<sub>${r.note.octave}</sub>` : '—';
-  $('tn-sub').textContent = r
-    ? `${r.hz.toFixed(1)} Hz　${r.note.cents >= 0 ? '+' : '−'}${Math.abs(r.note.cents).toFixed(0)} セント`
-    : S.mic ? '弦を1本だけ鳴らしてください' : 'マイクを準備しています';
+  $('tn-sub').textContent = far
+    ? `${tg.string}弦は ${STRING_NAMES[tg.midi % 12]}。${Math.round(Math.abs(tg.off))} 半音${tg.off > 0 ? '下げる' : '上げる'}`
+    : r ? `${r.hz.toFixed(1)} Hz　${r.note.cents >= 0 ? '+' : '−'}${Math.abs(r.note.cents).toFixed(0)} セント`
+      : S.mic ? '弦を1本だけ鳴らしてください' : 'マイクを準備しています';
+  // 曲のチューニング（6弦から）。いま鳴っている弦を目立たせる
+  const tuning = S.chart?.tuning ?? [];
+  $('tn-strings').innerHTML = tuning.map((t, i) => ({ t, s: i + 1 })).reverse().map(({ t, s }) =>
+    `<span${tg?.string === s ? ' class="on"' : ''}><b>${STRING_NAMES[t % 12]}</b>${s}弦</span>`).join('');
+  const capo = S.chart?.capo;
+  $('tn-capo').hidden = !capo;
+  $('tn-capo').textContent = capo ? `合わせてから、カポを ${capo} フレットに付ける` : '';
 }
 let toastTimer;
 function toast(msg) {
@@ -1128,6 +1155,7 @@ $('zoom').addEventListener('input', e => { view.pps = Number(e.target.value); st
 $('sheet-scale').addEventListener('input', e => { sheet.scale = Number(e.target.value) / 100; store.set('sheetScale', sheet.scale); syncSheetScale(); });
 $('settings-btn').addEventListener('click', openSettings);
 $('tuner-btn').addEventListener('click', openTuner);
+$('setup-btn').addEventListener('click', openTuner);
 $('tn-close').addEventListener('click', closeTuner);
 $('mic-btn').addEventListener('click', async () => {
   openSettings();

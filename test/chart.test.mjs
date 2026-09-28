@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { scoreFromAlphaTex, exportGp7, loadScore, buildChart } from '../src/chart.js';
+import { scoreFromAlphaTex, exportGp7, loadScore, buildChart, tuningName, setupLabel } from '../src/chart.js';
 
 const tex = `\\tempo 90 . \\track "G" \\staff {tabs} \\tuning e4 b3 g3 d3 a2 e2 \\capo 2
 \\ro (0.6 2.4).4 3.2.4 0.1.8 0.1.8 2.1.4 | \\rc 2 \\tempo 120 0.5.2 (0.6 0.1).2 | 0.6.2 -.6.2`;
@@ -104,4 +104,15 @@ test('シャッフルの小節は、8分の組を 2:1 の長さで鳴らす', ()
   const c = buildChart(scoreFromAlphaTex(`\\tempo 60 . \\tf triplet-8th 0.1.8 1.1.8 3.1.8 5.1.8 7.1.2`), 0);
   const r = x => Math.round(x * 1000) / 1000;
   assert.deepEqual(c.notes.map(n => [r(n.t), r(n.t + n.dur)]), [[0, 0.667], [0.667, 1], [1, 1.667], [1.667, 2], [2, 4]]);
+});
+
+test('チューニングとカポを、弾く前に合わせるものとして名前にする', () => {
+  const midi = s => s.split(' ').map(n => ({ C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[n[0]] + (n[1] === '#' ? 1 : 0) + 12 * (Number(n.at(-1)) + 1)));
+  assert.equal(tuningName(midi('E4 B3 G3 D3 A2 E2')), 'レギュラー');
+  assert.equal(tuningName(midi('E4 B3 G3 D3 A2 D2')), 'ドロップD');
+  assert.equal(tuningName(midi('D4 A3 G3 D3 A2 D2')), 'DADGAD');
+  assert.equal(tuningName(midi('D#4 A#3 F#3 C#3 G#2 D#2')), 'D# G# C# F# A# D#');
+  assert.equal(setupLabel({ tuning: midi('E4 B3 G3 D3 A2 E2'), capo: 0 }), null);
+  assert.equal(setupLabel({ tuning: midi('E4 B3 G3 D3 A2 E2'), capo: 2 }), 'カポ 2');
+  assert.equal(setupLabel({ tuning: midi('D4 A3 G3 D3 A2 D2'), capo: 6 }), 'DADGAD · カポ 6');
 });
