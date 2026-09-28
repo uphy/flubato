@@ -6,6 +6,8 @@ import { drawRhythm, RHYTHM_H } from './rhythm.js';
 
 const MIN_GROUP_PX = 32;
 const CLEF_W = 30; // 段の頭の TAB の記号のぶん
+const SIG_W = 26; // 拍子記号のぶんの幅
+const LEGATO_TAGS = { h: 'H', p: 'P', s: 'S' }; // レガートの弧に添える文字（日本の市販譜と同じ大文字）
 const STROKE_W = 0.6; // ストロークの矢印のぶんの幅（和音1つぶんの間隔に対する割合）
 const FONT = '-apple-system, system-ui, "Helvetica Neue", sans-serif';
 // 色（index.html の CSS と合わせる）
@@ -72,10 +74,16 @@ export class SheetView {
       this.barPos.set(i, { ts, fr: ws.map(w => { const f = acc / total; acc += w; return f; }) });
       perBar.set(i, total * 0.8);
     });
+    // 拍子記号は曲の頭と、拍子が変わる小節に、小節線のすぐ右に描く。そのぶん小節の頭を空ける
+    this.sigOf = new Map();
+    chart.bars.forEach((bar, i) => {
+      const prev = chart.bars[i - 1];
+      if (bar.num && (!prev || prev.num !== bar.num || prev.den !== bar.den)) this.sigOf.set(i, { num: bar.num, den: bar.den, w: SIG_W * k });
+    });
     const rows = [];
     let row = [], x = left;
     chart.bars.forEach((bar, i) => {
-      const w = Math.max(120 * gx, ((perBar.get(i) || 1) * MIN_GROUP_PX + 28) * gx);
+      const w = Math.max(120 * gx, ((perBar.get(i) || 1) * MIN_GROUP_PX + 28) * gx) + (this.sigOf.get(i)?.w ?? 0);
       if (row.length && x + w > right) {
         rows.push(row); row = []; x = left;
       }
@@ -94,7 +102,7 @@ export class SheetView {
     this.boxOf = new Map();
     rows.forEach(r => r.forEach(b => this.boxOf.set(b.i, b)));
     rows.forEach((r, ri) => r.forEach(b => this.rowOfBar.set(b.i, ri)));
-    // レガート（ハンマリング・プリング・スライド）の弧を、同じ弦の1つ前の音から引く
+    // レガート（ハンマリング・プリング・スライド）の弧・斜線を、同じ弦の1つ前の音から引く
     this.prevOnString = new Map();
     const lastOn = new Map();
     for (const n of chart.notes) {
@@ -189,7 +197,20 @@ export class SheetView {
         const key = `${ri}:${n.string}`;
         if (!gaps.has(key)) gaps.set(key, []);
         gaps.get(key).push([x - tw / 2, x + tw / 2]);
-        return { n, id, label, tw, y: top + (n.string - 1) * stringGap };
+        // レガートは前の音（同じ段になければ少し左）から。H・P・S の文字は1本上の弦の線の上に置き、その弦を文字のところで切る
+        const p = this.prevOnString.get(id);
+        let leg = null;
+        if (p !== undefined) {
+          const pn = chart.notes[p];
+          const px = this.rowOfBar.get(pn.bar) === ri ? this.xAt(chart, pn.bar, pn.t) : x - fs * 2;
+          leg = { px, from: pn, tag: LEGATO_TAGS[n.legato] };
+          if (leg.tag && n.string > 1) {
+            const up = `${ri}:${n.string - 1}`, mx = (px + x) / 2, lw = fs * 0.5;
+            if (!gaps.has(up)) gaps.set(up, []);
+            gaps.get(up).push([mx - lw / 2, mx + lw / 2]);
+          }
+        }
+        return { n, id, label, tw, y: top + (n.string - 1) * stringGap, leg };
       });
       placed.push({ grp, gi, ri, top, x, notes });
     });
@@ -213,6 +234,20 @@ export class SheetView {
         g.font = `700 ${Math.max(9, Math.round(11 * k))}px ${FONT}`;
         g.textAlign = 'left';
         g.fillText(String(chart.bars[b.i].number), b.x + 5 * k, upper - stringGap * 0.75);
+      }
+      // 拍子記号（弦の線は記号のところで切る）
+      for (const b of row) {
+        const sig = this.sigOf.get(b.i);
+        if (!sig) continue;
+        const sx = b.x + 6 * k + sig.w / 2, sf = Math.round(Math.min(staffH * 0.42, 26 * k));
+        for (let s = 1; s <= chart.stringCount; s++) {
+          const key = `${ri}:${s}`;
+          if (!gaps.has(key)) gaps.set(key, []);
+          gaps.get(key).push([sx - sf * 0.45, sx + sf * 0.45]);
+        }
+        g.font = `800 ${sf}px ${FONT}`; g.textAlign = 'center'; g.fillStyle = C.ink;
+        g.fillText(String(sig.num), sx, top + staffH * 0.27);
+        g.fillText(String(sig.den), sx, top + staffH * 0.73);
       }
       // 弦（数字のところは切る）
       g.strokeStyle = C.string; g.lineWidth = 1;
@@ -292,7 +327,7 @@ export class SheetView {
       }
       const skipped = R?.marks.some(m => m.kind === 'skip');
       g.font = font; g.textAlign = 'center';
-      for (const { n, id, label, tw, y } of notes) {
+      for (const { n, id, label, tw, y, leg } of notes) {
         const heard = R?.notes.get(id); // 'missing' | 'weak'
         const color = isNext ? C.accent
           : skipped || heard === 'missing' || played === 2 ? C.bad
@@ -302,16 +337,24 @@ export class SheetView {
         g.font = n.grace ? graceFont : font;
         g.fillText(label, x, y + 1);
         if (n.bend) this._drawBend(chart, n, x, tw, y - fs * 0.55, top - (chart.bars[grp.bar].voiced ? upH : 0) - stringGap * 0.85, ri, fs, isNext ? C.accent : color);
-        const p = this.prevOnString.get(id);
-        if (p !== undefined) {
-          // レガートの弧（前の音が同じ段にあれば、そこから）
-          const pn = chart.notes[p], pr = this.rowOfBar.get(pn.bar);
-          const px = pr === ri ? this.xAt(chart, pn.bar, pn.t) : x - fs * 2;
-          g.strokeStyle = isNext ? C.accent : color; g.lineWidth = 1.3; g.globalAlpha = 0.8;
+        if (leg) {
+          // レガート: ハンマリング・プリングは弧、スライドは数字のあいだの斜線（上がるなら右上がり）。上に H・P・S を添える
+          const { px } = leg;
+          g.strokeStyle = g.fillStyle = isNext ? C.accent : color; g.lineWidth = 1.3; g.globalAlpha = 0.8;
           g.beginPath();
-          g.moveTo(px + fs * 0.3, y - fs * 0.62);
-          g.quadraticCurveTo((px + x) / 2, y - fs * 0.62 - Math.min(10, (x - px) * 0.15 + 3), x - fs * 0.3, y - fs * 0.62);
-          g.stroke(); g.globalAlpha = 1;
+          if (n.legato === 's') {
+            const d = (n.fret >= leg.from.fret ? 1 : -1) * fs * 0.28;
+            g.moveTo(px + fs * 0.5, y + d); g.lineTo(x - tw / 2, y - d);
+          } else {
+            g.moveTo(px + fs * 0.3, y - fs * 0.62);
+            g.quadraticCurveTo((px + x) / 2, y - fs * 0.62 - Math.min(10, (x - px) * 0.15 + 3), x - fs * 0.3, y - fs * 0.62);
+          }
+          g.stroke();
+          if (leg.tag) {
+            g.font = `700 ${Math.round(fs * 0.7)}px ${FONT}`;
+            g.fillText(leg.tag, (px + x) / 2, y - stringGap + 0.5);
+          }
+          g.globalAlpha = 1; g.fillStyle = color;
         }
         if (heard) {
           // 聞き取れなかった音は赤い斜線、小さかった音は点線の下線
@@ -525,7 +568,8 @@ export class SheetView {
       if (k < 0) k = p.ts.length - 1;
       f = p.fr[k];
     }
-    return b.x + 18 * this.k + f * (b.w - 30 * this.k);
+    const lead = this.sigOf.get(i)?.w ?? 0;
+    return b.x + 18 * this.k + lead + f * (b.w - 30 * this.k - lead);
   }
 
   /** 小節 i の中の時刻 t の横位置。xAt と違い、和音と和音のあいだも時刻に比例してなめらかに動く（再生位置の線に使う） */
@@ -539,7 +583,8 @@ export class SheetView {
       if (k < 0) f = p.fr[0] * span(bar.t, p.ts[0]);
       else f = p.fr[k] + ((p.fr[k + 1] ?? 1) - p.fr[k]) * span(p.ts[k], p.ts[k + 1] ?? bar.end);
     }
-    return b.x + 18 * this.k + f * (b.w - 30 * this.k);
+    const lead = this.sigOf.get(i)?.w ?? 0;
+    return b.x + 18 * this.k + lead + f * (b.w - 30 * this.k - lead);
   }
 
   /** 画面上の点がどの和音か（なければ null） */
