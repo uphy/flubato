@@ -483,6 +483,10 @@ body.reviewing #stage { left: 300px; width: calc(100% - 300px); }
         <div><b>譜面の大きさ <span id="sheet-scale-v"></span></b><p>小さくすると数字と弦の間隔が詰まって、1段に入る小節が増える。音ゲーモードをタブ譜で見るときも同じ大きさ</p></div>
         <input type="range" id="sheet-scale" min="60" max="140" step="5">
       </div>
+      <div class="set">
+        <div><b>音符の間隔</b><p>音符と音符の横の間隔を、これより詰めない。広げると、スマホの縦持ちでは1段に入る小節が減る</p></div>
+        <select id="sheet-spacing"><option value="narrow">狭い</option><option value="normal">ふつう</option><option value="wide">広い</option></select>
+      </div>
     </section>
     <section>
       <h3>音ゲーモード</h3>
