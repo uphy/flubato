@@ -24,7 +24,11 @@ try {
     await evalJs(`window.__flubato.setMode('game'); window.__flubato.start()`);
     await sleep(9000);
     await shot(send, out.replace(/\.png$/, '-game-play.png'));
-    await sleep((chart.duration + lead + 2) * 1000 - 9000);
+    // 途中から、練習モードと同じタブ譜の見た目に切り替える
+    await evalJs(`const el = document.getElementById('game-view'); el.value = 'sheet'; el.dispatchEvent(new Event('change'))`);
+    await sleep(3000);
+    await shot(send, out.replace(/\.png$/, '-game-sheet.png'));
+    await sleep((chart.duration + lead + 2) * 1000 - 12000);
     console.log('game:', await evalJs(`({ acc: document.getElementById('acc').textContent, count: document.getElementById('count').textContent, timing: document.getElementById('timing').textContent, result: !document.getElementById('result').hidden })`));
     await shot(send, out.replace(/\.png$/, '-game.png'));
     await review(evalJs, send, 'r-review', 'game', downloads);

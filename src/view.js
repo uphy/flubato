@@ -235,25 +235,29 @@ export class View {
       g.globalAlpha = 1;
     }
 
-    // カウント（1小節ぶん）。1, 2, 3 と数え上げ、何拍数えるかを点で見せる
-    if (opts.countIn) {
-      const { k, n } = opts.countIn;
-      const size = Math.round(Math.min(140, H * 0.26));
-      g.fillStyle = 'rgba(14,16,22,0.82)';
-      g.fillRect(0, 0, W, H);
-      g.fillStyle = k === n ? '#ffffff' : '#ffd24a';
-      g.font = `800 ${size}px ${FONT}`;
-      g.fillText(String(k), W / 2, H / 2);
-      const r = 7, gap = 26, y = H / 2 + size * 0.7;
-      for (let i = 1; i <= n; i++) {
-        const x = W / 2 + (i - (n + 1) / 2) * gap;
-        g.beginPath(); g.arc(x, y, i === 1 ? r + 1.5 : r, 0, Math.PI * 2);
-        if (i <= k) { g.fillStyle = '#ffd24a'; g.fill(); }
-        else { g.strokeStyle = 'rgba(255,210,74,0.5)'; g.lineWidth = 1.5; g.stroke(); }
-      }
-    }
+    if (opts.countIn) drawCountIn(g, W, H, opts.countIn);
     g.textAlign = 'left';
   }
+}
+
+/** カウント（1小節ぶん）。1, 2, 3 と数え上げ、何拍数えるかを点で見せる。音ゲーモードのタブ譜の表示でも使う */
+export function drawCountIn(g, W, H, { k, n }) {
+  const size = Math.round(Math.min(140, H * 0.26));
+  g.save();
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = 'rgba(14,16,22,0.82)';
+  g.fillRect(0, 0, W, H);
+  g.fillStyle = k === n ? '#ffffff' : '#ffd24a';
+  g.font = `800 ${size}px ${FONT}`;
+  g.fillText(String(k), W / 2, H / 2);
+  const r = 7, gap = 26, y = H / 2 + size * 0.7;
+  for (let i = 1; i <= n; i++) {
+    const x = W / 2 + (i - (n + 1) / 2) * gap;
+    g.beginPath(); g.arc(x, y, i === 1 ? r + 1.5 : r, 0, Math.PI * 2);
+    if (i <= k) { g.fillStyle = '#ffd24a'; g.fill(); }
+    else { g.strokeStyle = 'rgba(255,210,74,0.5)'; g.lineWidth = 1.5; g.stroke(); }
+  }
+  g.restore();
 }
 
 const PULSE_SEC = 0.15; // 拍で光った判定ラインが元に戻るまで（曲の秒）
