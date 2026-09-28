@@ -33,6 +33,7 @@ const S = {
   playing: false, song: 0, lastNow: 0, history: [],
   follower: null, listening: false, practiceStart: 0, doneAt: null,
   demo: null, // 練習モードの「再生」（demo.js）
+  demoResume: null, // 再生を停止ボタンで止めたところ（group）。次の「再生」はここから
   recorder: null,
   take: null, // 振り返り用に、いま弾いている回の音をためる
   lastReview: null, // 直前の回の振り返り { data, take, diag（調査用）, song, trackIndex, title }
@@ -560,7 +561,7 @@ function setMode(mode) {
 
 function togglePlay() {
   if (S.reviewing) return S.hub.playing ? reviewPause() : reviewPlay(S.hub.pos);
-  if (S.mode === 'practice' && S.demo?.playing) return stopDemo();
+  if (S.mode === 'practice' && S.demo?.playing) return pauseDemo();
   if (S.mode === 'practice') return S.listening ? stopPractice(true) : startPractice();
   return S.playing ? stop() : start();
 }
@@ -612,16 +613,40 @@ async function startDemo(fromBar = Number($('from').value)) {
   if (S.listening) stopPractice(false);
   $('presult').hidden = true;
   S.demo ??= new DemoPlayer(S.audio);
-  S.demo.start(S.chart, S.chart.bars[fromBar].t);
+  // 止めたところの小節から始めるなら、小節の頭ではなく止めた和音から続ける
+  const resume = S.demoResume !== null && S.chart.groups[S.demoResume]?.bar === fromBar ? S.chart.groups[S.demoResume].t : null;
+  S.demoResume = null;
+  S.demo.start(S.chart, resume ?? S.chart.bars[fromBar].t);
   sheet.follow();
   setDemoLabel();
 }
 
 function stopDemo() {
+  S.demoResume = null;
   if (!S.demo?.playing) return;
   S.demo.stop();
   setDemoLabel();
   updatePracticeStats();
+}
+
+/** 停止ボタン: 最初に戻らず、いま鳴っている和音で止める。次の「再生」と「弾きはじめる」はその小節から */
+function pauseDemo() {
+  if (!S.demo?.playing) return;
+  const cur = Math.max(0, demoGroup());
+  stopDemo();
+  S.demoResume = cur;
+  $('from').value = String(S.chart.groups[cur].bar);
+  S.follower.start(cur);
+  S.finalPlayed = null; S.lastStumbles = null;
+  updatePracticeStats();
+}
+
+/** 再生でいま鳴っている和音（group） */
+function demoGroup() {
+  const d = S.demo, gs = S.chart.groups;
+  let cur = gs.findIndex(g => g.t >= d.song0 - 1e-6);
+  while (cur + 1 < gs.length && gs[cur + 1].t <= d.pos + 0.02) cur++;
+  return cur;
 }
 
 /** 再生している位置を譜面に出す（鳴っている和音を、弾くときの「次の和音」と同じ色で） */
@@ -629,9 +654,8 @@ function drawDemo() {
   const d = S.demo;
   d.pump();
   if (d.done) { stopDemo(); return; }
-  const t = d.pos, gs = S.chart.groups;
-  let cur = gs.findIndex(g => g.t >= d.song0 - 1e-6);
-  while (cur + 1 < gs.length && gs[cur + 1].t <= t + 0.02) cur++;
+  const gs = S.chart.groups;
+  const cur = demoGroup();
   sheet.draw(S.chart, { pos: cur - 1, conf: 1, listening: true, demo: true, played: null, stumbleBars: null });
   const bar = S.chart.bars[gs[Math.max(0, cur)].bar];
   const acc = `${bar.number}小節`;
@@ -1059,7 +1083,7 @@ $('lib-list').addEventListener('click', async e => {
   }
 });
 $('play').addEventListener('click', togglePlay);
-$('demo').addEventListener('click', () => (S.demo?.playing ? stopDemo() : startDemo()));
+$('demo').addEventListener('click', () => (S.demo?.playing ? pauseDemo() : startDemo()));
 $('speed').addEventListener('input', syncSpeedLabel);
 $('zoom').addEventListener('input', e => { view.pps = Number(e.target.value); store.set('zoom', view.pps); syncRange(e.target); });
 $('sheet-scale').addEventListener('input', e => { sheet.scale = Number(e.target.value) / 100; store.set('sheetScale', sheet.scale); syncSheetScale(); });
@@ -1158,6 +1182,7 @@ $('stage').addEventListener('click', e => {
   if (bar === null) return;
   // 弾いている途中なら、その小節から追い直す。止まっていれば開始位置にする
   $('from').value = String(bar);
+  S.demoResume = null;
   if (S.demo?.playing) { startDemo(bar); return; }
   if (S.listening) { S.follower.start(Math.max(0, S.chart.groups.findIndex(g => g.bar >= bar))); updatePracticeStats(); }
   else { S.follower.start(Math.max(0, S.chart.groups.findIndex(g => g.bar >= bar))); S.finalPlayed = null; S.lastStumbles = null; }
@@ -1167,6 +1192,7 @@ for (const id of ['r-bars', 'r-weak']) {
   $(id).addEventListener('click', e => { const b = e.target.closest('[data-bar]'); if (b) practiceBar(Number(b.dataset.bar)); });
 }
 for (const id of ['from', 'to']) $(id).addEventListener('change', () => {
+  S.demoResume = null;
   if (S.playing) return;
   const r = selectedRange();
   S.song = r.from - 0.5;
