@@ -14,6 +14,7 @@ export class DemoPlayer {
     this.out = null; // 鳴らしている間だけある
     this.voices = new Map(); // 弦 → 最後に予約した音 { src, gain }
     this.rate = 1; // 速さ（1 = 譜面どおり）。音の高さは変えず、鳴らす間隔だけを変える
+    this.tap = null; // 譜面を押して鳴らした和音 { out, voices, ctx0, song0, rate, ring }
   }
 
   get playing() { return this.out !== null; }
@@ -22,14 +23,10 @@ export class DemoPlayer {
   start(chart, from, rate = this.rate) {
     this.rate = rate;
     this.stop();
+    this._stopTap();
     const a = this.audio;
     this.chart = chart;
-    this.out = a.createGain();
-    this.out.gain.value = 0.5;
-    // ff の和音やアクセントを重ねたときに割れないよう、大きいところだけ抑える
-    const comp = a.createDynamicsCompressor();
-    comp.threshold.value = -6; comp.knee.value = 6; comp.ratio.value = 8;
-    this.out.connect(comp).connect(a.destination);
+    this.out = this._bus();
     this.ctx0 = a.currentTime + LEAD;
     this.song0 = from;
     this.next = chart.notes.findIndex(n => n.t >= from - 1e-6);
@@ -57,19 +54,52 @@ export class DemoPlayer {
 
   stop() {
     if (!this.out) return;
-    const now = this.audio.currentTime, out = this.out;
-    out.gain.setTargetAtTime(0, now, 0.02);
-    for (const v of this.voices.values()) v.src.stop(now + 0.15);
-    setTimeout(() => out.disconnect(), 300);
-    this.voices.clear();
+    this._fade(this.out, this.voices);
     this.out = null;
   }
 
-  _play(n) {
+  /**
+   * 和音を1つだけ、いま鳴らす（練習モードで譜面の和音を押したとき）。
+   * 音の高さを確かめるためなので、短い音符でも書かれた長さで止めずに響かせる。前に押した和音は止める
+   */
+  hear(notes) {
+    if (this.out || notes.length === 0) return;
+    this._stopTap();
+    const t0 = Math.min(...notes.map(n => n.t));
+    this.tap = { out: this._bus(), voices: new Map(), ctx0: this.audio.currentTime + 0.01, song0: t0, rate: 1, ring: true };
+    for (const n of [...notes].sort((a, b) => a.t - b.t)) this._play(n, this.tap);
+  }
+
+  _stopTap() {
+    if (!this.tap) return;
+    this._fade(this.tap.out, this.tap.voices);
+    this.tap = null;
+  }
+
+  /** 鳴らす先。ff の和音やアクセントを重ねたときに割れないよう、大きいところだけ抑える */
+  _bus() {
+    const a = this.audio, out = a.createGain();
+    out.gain.value = 0.5;
+    const comp = a.createDynamicsCompressor();
+    comp.threshold.value = -6; comp.knee.value = 6; comp.ratio.value = 8;
+    out.connect(comp).connect(a.destination);
+    return out;
+  }
+
+  _fade(out, voices) {
+    const now = this.audio.currentTime;
+    out.gain.setTargetAtTime(0, now, 0.02);
+    for (const v of voices.values()) v.src.stop(now + 0.15);
+    setTimeout(() => out.disconnect(), 300);
+    voices.clear();
+  }
+
+  /** p: 鳴らす先と時刻の対応（再生なら this、押した和音なら this.tap） */
+  _play(n, p = this) {
     const a = this.audio;
-    const at = Math.max(a.currentTime, this.ctx0 + (n.t + (n.strum ?? 0) - this.song0) / this.rate);
+    const at = Math.max(a.currentTime, p.ctx0 + (n.t + (n.strum ?? 0) - p.song0) / p.rate);
     // 同じ弦で次の音を弾いたら、前の音は止まる（まだ鳴っていれば）
-    const prev = this.voices.get(n.string);
+    const prev = p.voices.get(n.string);
     if (prev && at < prev.end) { prev.gain.gain.setTargetAtTime(0, at, 0.012); prev.src.stop(at + 0.1); }
     const { buffer, rate } = this._sound(n);
     const src = a.createBufferSource();
@@ -79,23 +109,23 @@ export class DemoPlayer {
       // チョーキング: 弾いた瞬間の高さから、点どうしをまっすぐつないで上げ下げする
       const s0 = n.bend[0].semis;
       src.playbackRate.setValueAtTime(rate, at);
-      for (const p of n.bend) src.playbackRate.linearRampToValueAtTime(rate * 2 ** ((p.semis - s0) / 12), at + p.t / this.rate);
+      for (const b of n.bend) src.playbackRate.linearRampToValueAtTime(rate * 2 ** ((b.semis - s0) / 12), at + b.t / p.rate);
     }
     const gain = a.createGain();
     // 左手だけで鳴らす音は小さく、低音弦（4〜6弦）は伴奏なので控えめに（低い音は長く響いて積み重なり、メロディを埋めやすい）。
     // 強弱記号・アクセント・ゴーストノートで強さを変える
     const steps = (n.level ?? 0) + (n.accent ?? 0) + (n.ghost ? GHOST_STEPS : 0);
     gain.gain.value = (n.kind === 'legato' ? 0.45 : n.string >= 4 ? 0.6 : 0.8) * 10 ** (steps * STEP_DB / 20);
-    src.connect(gain).connect(this.out);
+    src.connect(gain).connect(p.out);
     src.start(at);
     // 書かれた長さで止める（スタッカートは譜面の時点で半分になっている）。レットリングは同じ弦で次を弾くまで鳴らしっぱなし
     let end = Infinity;
-    if (!n.letRing) {
-      end = at + Math.max(0.05, n.dur - (n.strum ?? 0)) / this.rate; // ずらして弾いた音も、書かれた終わりで止める
+    if (!n.letRing && !p.ring) {
+      end = at + Math.max(0.05, n.dur - (n.strum ?? 0)) / p.rate; // ずらして弾いた音も、書かれた終わりで止める
       gain.gain.setTargetAtTime(0, end, n.staccato ? 0.012 : 0.03);
       src.stop(end + 0.2);
     }
-    this.voices.set(n.string, { src, gain, end });
+    p.voices.set(n.string, { src, gain, end });
   }
 
   _sound(n) {

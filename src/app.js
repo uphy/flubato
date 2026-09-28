@@ -665,6 +665,14 @@ function pauseDemo() {
   updatePracticeStats();
 }
 
+/** 譜面で押した和音を1つ鳴らす */
+async function hearGroup(g) {
+  try { await ensureOutput(); } catch (e) { micError(e); return; }
+  if (S.listening || S.demo?.playing) return;
+  S.demo ??= new DemoPlayer(S.audio);
+  S.demo.hear(S.chart.groups[g].noteIds.map(id => S.chart.notes[id]));
+}
+
 function demoSpeed() { return Number($('demo-speed').value) / 100; }
 
 /** ⏮: 1小節目に戻る。鳴らしている途中なら、1小節目から鳴らし直す */
@@ -1199,10 +1207,10 @@ for (const id of ['run-full', 'rv-full']) $(id).addEventListener('click', runFul
 $('rv-next').addEventListener('click', () => reviewStep(1));
 $('rv-close').addEventListener('click', closeReview);
 document.querySelectorAll('[data-mode-btn]').forEach(b => b.addEventListener('click', () => setMode(b.dataset.modeBtn)));
-// 押せるところ（練習の小節・振り返りの和音）では指の形に
+// 押せるところ（練習の小節と和音・振り返りの和音）では指の形に
 $('stage').addEventListener('mousemove', e => {
   const r = $('stage').getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
-  const can = S.reviewing ? sheet.groupAt(x, y) !== null || sheet.barAt(x, y) !== null : S.mode === 'practice' && sheet.barAt(x, y) !== null;
+  const can = S.reviewing ? sheet.groupAt(x, y) !== null || sheet.barAt(x, y) !== null : S.mode === 'practice' && (sheet.groupAt(x, y) !== null || sheet.barAt(x, y) !== null);
   $('stage').style.cursor = can ? 'pointer' : '';
 });
 // 練習・振り返りの譜面は、ホイールや指でなぞって全体を見渡せる
@@ -1249,7 +1257,10 @@ $('stage').addEventListener('click', e => {
     return;
   }
   if (S.mode !== 'practice') return;
-  const bar = sheet.barAt(e.clientX - r.left, e.clientY - r.top);
+  // 止まっているときに和音を押したら、その和音を鳴らす（弾いている途中はマイクが拾うので鳴らさない。再生中はその小節から鳴らし直す）
+  const g = sheet.groupAt(e.clientX - r.left, e.clientY - r.top);
+  if (g !== null && !S.listening && !S.demo?.playing) hearGroup(g);
+  const bar = g !== null ? S.chart.groups[g].bar : sheet.barAt(e.clientX - r.left, e.clientY - r.top);
   if (bar === null) return;
   // 弾いている途中なら、その小節から追い直す。止まっていれば開始位置にする
   S.practiceFrom = bar;
