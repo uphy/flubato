@@ -245,7 +245,7 @@ export class SheetView {
           if (!gaps.has(key)) gaps.set(key, []);
           gaps.get(key).push([sx - sf * 0.45, sx + sf * 0.45]);
         }
-        g.font = `800 ${sf}px ${FONT}`; g.textAlign = 'center'; g.fillStyle = C.ink;
+        g.font = `600 ${sf}px ${FONT}`; g.textAlign = 'center'; g.fillStyle = C.faint; // 数字より控えめに
         g.fillText(String(sig.num), sx, top + staffH * 0.27);
         g.fillText(String(sig.den), sx, top + staffH * 0.73);
       }
@@ -351,7 +351,7 @@ export class SheetView {
           }
           g.stroke();
           if (leg.tag) {
-            g.font = `700 ${Math.round(fs * 0.7)}px ${FONT}`;
+            g.font = `600 ${Math.round(fs * 0.7)}px ${FONT}`; g.globalAlpha = 0.55;
             g.fillText(leg.tag, (px + x) / 2, y - stringGap + 0.5);
           }
           g.globalAlpha = 1; g.fillStyle = color;
