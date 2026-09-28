@@ -21,7 +21,7 @@ await esbuild.build({
   target: ['chrome110', 'safari16', 'firefox115'],
   minify: true,
   outfile: 'dist/app.js',
-  loader: { '.gp': 'binary' },
+  loader: { '.gp': 'binary', '.woff2': 'dataurl' },
   define: { __BUILD__: JSON.stringify(build), __BUILD_INFO__: JSON.stringify(info) },
   logLevel: 'warning',
 });
