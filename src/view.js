@@ -89,7 +89,7 @@ export class View {
       if (bar.t < tMin - 10 || bar.t > tMax) continue;
       const x = Math.round(xOf(bar.t) - nw / 2 - 6);
       g.fillStyle = 'rgba(255,255,255,0.32)';
-      g.fillRect(x - 1, yTop - 10, 2, yBot - yTop + 10);
+      g.fillRect(x, yTop - 10, 1, yBot - yTop + 10);
       g.fillStyle = 'rgba(236,238,243,0.45)';
       g.fillText(String(bar.number), x + 6, yTop - 12 - (chart.voiced ? RHYTHM_H : 0));
     }
@@ -111,14 +111,18 @@ export class View {
     };
     drawRhythm(g, chart, chart.rhythm.filter(r => visBars.has(r.bar)), r => xOf(r.t), { L: yBot - 4, T: yTop + 4, stemFrom }, 'rgba(236,238,243,0.4)');
 
-    // 和音のつなぎ線
+    // 和音のつなぎ線。声部ごとに引く（メロディと低音をつなぐと、1つの和音に見える）
     for (const grp of chart.groups) {
       if (grp.t < tMin || grp.t > tMax || grp.noteIds.length < 2) continue;
-      const ys = grp.noteIds.map(id => L.lanes[chart.notes[id].string - 1]);
       const x = xOf(grp.t);
       g.strokeStyle = 'rgba(255,255,255,0.28)';
       g.lineWidth = 2;
-      g.beginPath(); g.moveTo(x, Math.min(...ys)); g.lineTo(x, Math.max(...ys)); g.stroke();
+      const ns = grp.noteIds.map(id => chart.notes[id]);
+      for (const v of new Set(ns.map(n => n.voice))) {
+        const ys = ns.filter(n => n.voice === v).map(n => L.lanes[n.string - 1]);
+        if (ys.length < 2) continue;
+        g.beginPath(); g.moveTo(x, Math.min(...ys)); g.lineTo(x, Math.max(...ys)); g.stroke();
+      }
     }
 
     // 音符（後ろから描く）
