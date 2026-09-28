@@ -12,7 +12,7 @@ const FONT = '-apple-system, system-ui, "Helvetica Neue", sans-serif';
 const C = {
   bg: '#0e1016', ink: '#eceef3', played: 'rgba(236,238,243,0.28)', faint: 'rgba(236,238,243,0.38)', clef: 'rgba(236,238,243,0.3)',
   string: 'rgba(255,255,255,0.17)', barline: 'rgba(255,255,255,0.34)', rhythm: 'rgba(236,238,243,0.42)',
-  accent: '#ffd24a', accentInk: '#1c1600', accentSoft: 'rgba(255,210,74,0.075)', hover: 'rgba(255,255,255,0.035)',
+  accent: '#ffd24a', accentSoft: 'rgba(255,210,74,0.075)', hover: 'rgba(255,255,255,0.035)',
   bad: '#ff5f74', badSoft: 'rgba(255,95,116,0.13)',
 };
 // 振り返りで和音の下に出す印
@@ -270,14 +270,14 @@ export class SheetView {
     const pill = (x, top, pad = 0) => roundRect(g, x - fs * 0.78 - pad, top - fs * 0.72 - pad, fs * 1.56 + pad * 2, staffH + fs * 1.44 + pad * 2, fs * 0.7);
     for (const { grp, gi, ri, top, x, notes } of placed) {
       const played = state.played?.[gi];
-      const isNext = gi === next && (state.listening || !!rv);
+      // 音ゲーモードは再生位置の縦線があるので、次の和音は囲まない
+      const isNext = gi === next && (state.listening || !!rv) && song === null;
       const R = rv?.data.groups[gi];
       this.groupHits.push({ x, y0: top - 8 - upH, y1: top + staffH + 14 + rhythmH, g: gi });
       if (isNext) {
-        g.save();
-        g.shadowColor = 'rgba(255,210,74,0.45)'; g.shadowBlur = 16;
-        g.fillStyle = C.accent; pill(x, top); g.fill();
-        g.restore();
+        // 塗りは薄く、数字を黄色にして示す（塗りつぶすと譜面の中で目立ちすぎる）
+        g.fillStyle = 'rgba(255,210,74,0.13)'; pill(x, top); g.fill();
+        g.strokeStyle = 'rgba(255,210,74,0.5)'; g.lineWidth = 1.2; pill(x, top); g.stroke();
       } else if (rv && gi === rv.selected) {
         g.strokeStyle = C.ink; g.lineWidth = 1.5; pill(x, top); g.stroke();
       } else if (gi === state.pos && state.listening && !state.demo) {
@@ -294,7 +294,7 @@ export class SheetView {
       g.font = font; g.textAlign = 'center';
       for (const { n, id, label, tw, y } of notes) {
         const heard = R?.notes.get(id); // 'missing' | 'weak'
-        const color = isNext ? C.accentInk
+        const color = isNext ? C.accent
           : skipped || heard === 'missing' || played === 2 ? C.bad
           : played === 1 ? C.played
           : C.ink;
