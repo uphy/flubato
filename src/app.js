@@ -35,6 +35,7 @@ const S = {
   follower: null, listening: false, practiceStart: 0, doneAt: null,
   demo: null, // 練習モードの「再生」（demo.js）
   demoResume: null, // 再生を停止ボタンで止めたところ（group）。次の「再生」はここから
+  practiceFrom: 0, // 練習モードの「弾きはじめる」「再生」を始める小節。音ゲーの範囲（#from）とは別に持つ
   recorder: null,
   take: null, // 振り返り用に、いま弾いている回の音をためる
   lastReview: null, // 直前の回の振り返り { data, take, diag（調査用）, song, trackIndex, title }
@@ -44,7 +45,7 @@ const S = {
   hub: null, // 振り返り（苦手な箇所の一覧と録音、再生の状態）
   reviewing: false, // 振り返りの画面を開いているか
   drill: null, // 振り返りから小節を練習しに来ているとき { bar }
-  beforeDrill: null, // 小節を練習しに行く前の設定 { mode, from, to, loop, speed }（「最初から通す」で戻す）
+  beforeDrill: null, // 小節を練習しに行く前の設定 { mode, from, to, loop, speed, practiceFrom }（「最初から通す」で戻す）
   range: null, // { from, to } 秒
   latency: store.get('latency', 0.05),
   calibrating: null, // 合わせ中は元の譜面を退避
@@ -79,6 +80,7 @@ function setTrack(index) {
   $('to').innerHTML = opts;
   $('from').value = '0';
   $('to').value = String(S.chart.bars.length - 1);
+  S.practiceFrom = 0;
   stop();
   stopPractice(false);
   stopDemo();
@@ -512,7 +514,7 @@ function practiceBar(bi) {
   if (!S.hub && S.lastReview) S.hub = makeHub(S.lastReview);
   closeReview();
   // 範囲・くり返し・速さを書き換える前の設定を覚えておく（小節から小節へ移るときは、最初のものを残す）
-  if (!S.beforeDrill) S.beforeDrill = { mode: S.mode, from: $('from').value, to: $('to').value, loop: $('loop').checked, speed: $('speed').value };
+  if (!S.beforeDrill) S.beforeDrill = { mode: S.mode, from: $('from').value, to: $('to').value, loop: $('loop').checked, speed: $('speed').value, practiceFrom: S.practiceFrom };
   S.drill = { bar: bi };
   updateBackButton();
   if (S.mode !== 'game') setMode('game');
@@ -587,7 +589,7 @@ function togglePlay() {
   return S.playing ? stop() : start();
 }
 
-async function startPractice(fromBar = Number($('from').value)) {
+async function startPractice(fromBar = S.practiceFrom) {
   try {
     await ensureAudio();
   } catch (e) {
@@ -629,7 +631,7 @@ function stopPractice(showResult) {
 }
 
 // ---- 再生（練習モード。譜面の音を鳴らす。弾いた音は聞き取らない）----
-async function startDemo(fromBar = Number($('from').value)) {
+async function startDemo(fromBar = S.practiceFrom) {
   try { await ensureOutput(); } catch (e) { micError(e); return; }
   if (S.listening) stopPractice(false);
   $('presult').hidden = true;
@@ -657,7 +659,7 @@ function pauseDemo() {
   const cur = Math.max(0, demoGroup());
   stopDemo();
   S.demoResume = cur;
-  $('from').value = String(S.chart.groups[cur].bar);
+  S.practiceFrom = S.chart.groups[cur].bar;
   S.follower.start(cur);
   S.finalPlayed = null; S.lastStumbles = null;
   updatePracticeStats();
@@ -667,7 +669,7 @@ function demoSpeed() { return Number($('demo-speed').value) / 100; }
 
 /** ⏮: 1小節目に戻る。鳴らしている途中なら、1小節目から鳴らし直す */
 function demoTop() {
-  $('from').value = '0';
+  S.practiceFrom = 0;
   S.demoResume = null;
   sheet.follow();
   if (S.demo?.playing) { startDemo(0); return; }
@@ -870,7 +872,8 @@ function runFull() {
   if (b) $('speed').value = b.speed;
   syncSpeedLabel();
   updateBackButton();
-  if (mode === 'practice') startPractice(Number($('from').value));
+  S.practiceFrom = b?.practiceFrom ?? 0;
+  if (mode === 'practice') startPractice();
   else start();
 }
 
@@ -1249,7 +1252,7 @@ $('stage').addEventListener('click', e => {
   const bar = sheet.barAt(e.clientX - r.left, e.clientY - r.top);
   if (bar === null) return;
   // 弾いている途中なら、その小節から追い直す。止まっていれば開始位置にする
-  $('from').value = String(bar);
+  S.practiceFrom = bar;
   S.demoResume = null;
   if (S.demo?.playing) { startDemo(bar); return; }
   if (S.listening) { S.follower.start(Math.max(0, S.chart.groups.findIndex(g => g.bar >= bar))); updatePracticeStats(); }
