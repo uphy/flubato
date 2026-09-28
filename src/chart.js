@@ -122,7 +122,11 @@ export function buildChart(score, trackIndex) {
         if (beat.isRest || beat.notes.length === 0) continue;
         const startTick = mb.start + item.playbackStart;
         const t = tickToSec(startTick);
-        const dur = Math.max(0.05, tickToSec(startTick + beat.playbackDuration) - t);
+        // シャッフル（\tf）の小節では、鳴らす長さが書かれた音価と変わる（8分の組が 2:1 になる）。
+        // alphaTab が再生用に割り出した範囲を使う
+        const range = gen.tickLookup.getRelativeBeatPlaybackRange(beat);
+        const durTicks = range ? range.endTick - range.startTick : beat.playbackDuration;
+        const dur = Math.max(0.05, tickToSec(startTick + durTicks) - t);
         const ids = [];
         const strum = strumTicks(beat);
         for (const n of beat.notes) {
