@@ -4,6 +4,7 @@ import { midiToHz } from './dsp.js';
 
 const LOOKAHEAD = 0.25; // 何秒先の音まで予約しておくか（画面が止まっても音が途切れないように）
 const LEAD = 0.1; // 押してから最初の音までの間
+const ACCENT_GAIN = [1, 1.4, 1.7]; // アクセントなし・アクセント・強いアクセント
 
 export class DemoPlayer {
   constructor(audio) {
@@ -62,24 +63,27 @@ export class DemoPlayer {
 
   _play(n) {
     const a = this.audio;
-    const at = Math.max(a.currentTime, this.ctx0 + (n.t - this.song0) / this.rate);
-    // 同じ弦で次の音を弾いたら、前の音は止まる。それまでは鳴らしっぱなし（ギターの響きのまま）
+    const at = Math.max(a.currentTime, this.ctx0 + (n.t + (n.strum ?? 0) - this.song0) / this.rate);
+    // 同じ弦で次の音を弾いたら、前の音は止まる（まだ鳴っていれば）
     const prev = this.voices.get(n.string);
-    if (prev) { prev.gain.gain.setTargetAtTime(0, at, 0.012); prev.src.stop(at + 0.1); }
+    if (prev && at < prev.end) { prev.gain.gain.setTargetAtTime(0, at, 0.012); prev.src.stop(at + 0.1); }
     const { buffer, rate } = this._sound(n);
     const src = a.createBufferSource();
     src.buffer = buffer;
     src.playbackRate.value = rate;
     const gain = a.createGain();
-    gain.gain.value = n.kind === 'legato' ? 0.45 : n.string >= 4 ? 0.8 : 0.65; // 左手だけで鳴らす音は小さく、低音弦は少し太く
+    // 左手だけで鳴らす音は小さく、低音弦は少し太く。アクセントは強く
+    gain.gain.value = (n.kind === 'legato' ? 0.45 : n.string >= 4 ? 0.8 : 0.65) * ACCENT_GAIN[n.accent ?? 0];
     src.connect(gain).connect(this.out);
     src.start(at);
-    if (n.staccato) {
-      // スタッカートは譜面の長さ（書かれた長さの半分）で止める。止めた音は次の音で止め直さない
-      gain.gain.setTargetAtTime(0, at + n.dur / this.rate, 0.012);
-      src.stop(at + n.dur / this.rate + 0.1);
-      this.voices.delete(n.string);
-    } else this.voices.set(n.string, { src, gain });
+    // 書かれた長さで止める（スタッカートは譜面の時点で半分になっている）。レットリングは同じ弦で次を弾くまで鳴らしっぱなし
+    let end = Infinity;
+    if (!n.letRing) {
+      end = at + Math.max(0.05, n.dur - (n.strum ?? 0)) / this.rate; // ずらして弾いた音も、書かれた終わりで止める
+      gain.gain.setTargetAtTime(0, end, n.staccato ? 0.012 : 0.03);
+      src.stop(end + 0.2);
+    }
+    this.voices.set(n.string, { src, gain, end });
   }
 
   _sound(n) {

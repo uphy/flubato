@@ -6,6 +6,7 @@ import { drawRhythm, RHYTHM_H } from './rhythm.js';
 
 const MIN_GROUP_PX = 32;
 const CLEF_W = 30; // 段の頭の TAB の記号のぶん
+const STROKE_W = 0.6; // ストロークの矢印のぶんの幅（和音1つぶんの間隔に対する割合）
 const FONT = '-apple-system, system-ui, "Helvetica Neue", sans-serif';
 // 色（index.html の CSS と合わせる）
 const C = {
@@ -62,8 +63,12 @@ export class SheetView {
       const ts = [...new Set([...chart.rhythm.filter(r => r.bar === i).map(r => r.t), ...chart.groups.filter(g => g.bar === i).map(g => g.t)])].sort((a, b) => a - b);
       if (!ts.length) { perBar.set(i, 1); return; }
       const ws = ts.map((t, k) => Math.max(1, Math.sqrt(((ts[k + 1] ?? bar.end) - t) / 0.12)));
-      const total = ws.reduce((a, b) => a + b, 0);
-      let acc = 0;
+      // ストロークの矢印は和音の左に描くので、その前を少し空ける（小節の頭なら小節線との間を）
+      const strokes = new Set(chart.groups.filter(g => g.bar === i && g.stroke).map(g => g.t));
+      const lead = strokes.has(ts[0]) ? STROKE_W : 0;
+      ts.forEach((t, k) => { if (k > 0 && strokes.has(t)) ws[k - 1] += STROKE_W; });
+      const total = lead + ws.reduce((a, b) => a + b, 0);
+      let acc = lead;
       this.barPos.set(i, { ts, fr: ws.map(w => { const f = acc / total; acc += w; return f; }) });
       perBar.set(i, total * 0.8);
     });
@@ -96,6 +101,15 @@ export class SheetView {
       if (n.kind === 'legato' && lastOn.has(n.string)) this.prevOnString.set(n.id, lastOn.get(n.string));
       lastOn.set(n.string, n.id);
     }
+    // レットリングが続く和音のまとまり（間にレットリングでない和音が入ったら切る）
+    this.letRingRuns = [];
+    let run = null;
+    chart.groups.forEach((grp, gi) => {
+      if (grp.noteIds.some(id => chart.notes[id].letRing)) {
+        if (!run) this.letRingRuns.push(run = []);
+        run.push(gi);
+      } else if (!grp.grace) run = null;
+    });
     this.rows = rows;
     this._rowsFor = chart; this._w = this.w; this._k = k;
     return rows;
@@ -120,7 +134,7 @@ export class SheetView {
     const rhythmH = RHYTHM_H * k;
     const upH = chart.voiced ? rhythmH : 0; // 声部が2つある曲は、上にも上の声部の符尾の段
     const rowH = staffH + rhythmH + upH + stringGap * 2.6 + 24 * k; // 下にリズム（符尾・連桁）の段と、段のあいだ
-    const padTop = stringGap * 1.6 + 8;
+    const padTop = stringGap * 2.2 + 8; // 段の上にレットリングの線を引くぶん
     const fs = Math.max(9, Math.round(stringGap * 0.8));
     const font = `600 ${fs}px ${FONT}`;
     const graceFont = `600 ${Math.round(fs * 0.72)}px ${FONT}`; // 装飾音は小さく
@@ -185,10 +199,10 @@ export class SheetView {
         const upper = top - upH; // 上の声部の符尾の段のぶん上から
         if (isCur || stumble) {
           g.fillStyle = stumble ? C.badSoft : state.listening ? C.accentSoft : C.hover;
-          roundRect(g, b.x + 1, upper - stringGap * 1.2, b.w - 2, staffH + upH + stringGap * 1.2 + rhythmH + 8 * k, 8 * k);
+          roundRect(g, b.x + 1, upper - stringGap * 1.5, b.w - 2, staffH + upH + stringGap * 1.5 + rhythmH + 8 * k, 8 * k);
           g.fill();
         }
-        this.hits.push({ x0: b.x, x1: b.x + b.w, y0: upper - stringGap * 1.4, y1: bot + rhythmH + 8, bar: b.i });
+        this.hits.push({ x0: b.x, x1: b.x + b.w, y0: upper - stringGap * 1.6, y1: bot + rhythmH + 8, bar: b.i });
         g.fillStyle = stumble ? C.bad : isCur ? C.accent : C.faint;
         g.font = `700 ${Math.max(9, Math.round(11 * k))}px ${FONT}`;
         g.textAlign = 'left';
@@ -292,11 +306,33 @@ export class SheetView {
           g.stroke(); g.setLineDash([]);
         }
       }
-      // スタッカートの点。和音ごとに1つ、段の上に（Guitar Pro のタブ譜と同じ置き方）。上の声部の符尾があれば、その上に
+      // ストローク: 和音の左に波線の矢印。ダウン（6弦から1弦へ）は上向き、アップは下向き（Guitar Pro のタブ譜と同じ）
+      if (grp.stroke) {
+        const ys = notes.map(p => p.y), y0 = Math.min(...ys) - fs * 0.55, y1 = Math.max(...ys) + fs * 0.55;
+        const sx = x - Math.max(...notes.map(p => p.tw)) / 2 - fs * 0.3, head = fs * 0.32, amp = fs * 0.13, wave = fs * 0.42;
+        const [from, to] = grp.stroke.up ? [y0, y1 - head] : [y1, y0 + head];
+        g.strokeStyle = g.fillStyle = isNext ? C.accent : played === 1 ? C.played : C.ink;
+        g.lineWidth = 1.3; g.beginPath(); g.moveTo(sx, from);
+        const dir = Math.sign(to - from), len = Math.abs(to - from);
+        for (let d = 0; d <= len; d += 1) g.lineTo(sx + amp * Math.sin((d / wave) * Math.PI * 2), from + dir * d);
+        g.stroke();
+        const tip = grp.stroke.up ? y1 : y0;
+        g.beginPath(); g.moveTo(sx, tip); g.lineTo(sx + head * 0.6, tip - dir * head); g.lineTo(sx - head * 0.6, tip - dir * head); g.closePath(); g.fill();
+      }
+      // スタッカートの点とアクセント。和音ごとに1つ、段の上に（Guitar Pro のタブ譜と同じ置き方）。上の声部の符尾があれば、その上に
+      g.fillStyle = g.strokeStyle = played === 1 && !isNext ? C.played : C.ink;
+      let ay = top - (chart.bars[grp.bar].voiced ? upH : 0) - stringGap * 1.25;
       if (notes.some(({ n }) => n.staccato)) {
-        g.fillStyle = played === 1 && !isNext ? C.played : C.ink;
-        const dy = chart.bars[grp.bar].voiced ? upH : 0;
-        g.beginPath(); g.arc(x, top - dy - stringGap * 1.1, Math.max(1.8, fs * 0.13), 0, Math.PI * 2); g.fill();
+        g.beginPath(); g.arc(x, ay, Math.max(1.8, fs * 0.13), 0, Math.PI * 2); g.fill();
+        ay -= stringGap * 0.5;
+      }
+      const accent = Math.max(0, ...notes.map(({ n }) => n.accent ?? 0));
+      if (accent) {
+        const w = fs * 0.32, h = fs * 0.22;
+        g.lineWidth = 1.5; g.lineJoin = 'round'; g.beginPath();
+        if (accent === 2) { g.moveTo(x - h, ay + w * 0.5); g.lineTo(x, ay - w * 0.5); g.lineTo(x + h, ay + w * 0.5); } // ^
+        else { g.moveTo(x - w, ay - h); g.lineTo(x + w, ay); g.lineTo(x - w, ay + h); } // >
+        g.stroke();
       }
       // 和音の下に、どう悪かったかを1文字で
       const tags = (R?.marks ?? []).map(m => MARK_TAGS[m.kind]).filter(Boolean);
@@ -306,6 +342,35 @@ export class SheetView {
         const tw = g.measureText(text).width + 8, ty = top + staffH + rhythmH + 12;
         g.fillStyle = C.badSoft; roundRect(g, x - tw / 2, ty - 8, tw, 16, 4); g.fill();
         g.fillStyle = C.bad; g.fillText(text, x, ty + 0.5);
+      }
+    }
+    // レットリング: 続けて響かせる和音の上に「let ring」と点線を引き、終わりを縦の線で閉じる。段をまたぐときは段ごとに引く
+    for (const run of this.letRingRuns) {
+      const byRow = new Map();
+      for (const gi of run) {
+        const ri = this.rowOfBar.get(chart.groups[gi].bar);
+        if (!byRow.has(ri)) byRow.set(ri, []);
+        byRow.get(ri).push(gi);
+      }
+      for (const [ri, gis] of byRow) {
+        if (!visible(ri)) continue;
+        const row = rows[ri], last = row[row.length - 1];
+        const y = topOf(ri) - (row.some(b => chart.bars[b.i].voiced) ? upH : 0) - stringGap * 1.95; // 上の声部の符尾があれば、その上に
+        const first = gis[0] === run[0], end = gis[gis.length - 1] === run[run.length - 1];
+        const gx = gi => this.xAt(chart, chart.groups[gi].bar, chart.groups[gi].t);
+        let x0 = first ? gx(gis[0]) - fs * 0.5 : this.rowLeft + CLEF_W * k;
+        let x1 = end ? gx(gis[gis.length - 1]) + fs * 0.9 : last.x + last.w;
+        g.fillStyle = g.strokeStyle = C.faint;
+        if (first) {
+          g.font = `italic 600 ${Math.max(9, Math.round(fs * 0.62))}px ${FONT}`; g.textAlign = 'left';
+          g.fillText('let ring', x0, y);
+          x0 += g.measureText('let ring').width + 4;
+        }
+        x1 = Math.max(x1, x0 + fs);
+        g.lineWidth = 1; g.setLineDash([3, 3]);
+        g.beginPath(); g.moveTo(x0, y + 0.5); g.lineTo(x1, y + 0.5); g.stroke();
+        g.setLineDash([]);
+        if (end) { g.beginPath(); g.moveTo(x1 + 0.5, y - 3); g.lineTo(x1 + 0.5, y + 4); g.stroke(); }
       }
     }
     // 手で動かしている間は、全体のどこを見ているかを右端に出す
