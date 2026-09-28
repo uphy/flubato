@@ -28,20 +28,23 @@ export class View {
   layout(stringCount, voiced = false) {
     // 背の高い画面で弦の間隔を広げすぎると、目を上下に大きく動かすことになる。
     // 間隔に上限を付けて、レーンを縦の真ん中に置く
-    // スマホの縦持ち（幅が狭い）では、横に流れる時間が足りない。弦を詰めて判定ラインを左に寄せ、
-    // 流れる速さを落として先まで見せる（音符の間隔の設定はこの速さに掛かる）
+    // スマホの縦持ち（幅が狭い）では、横に流れる時間が足りない。弦を詰めて判定ラインを左に寄せる
     const narrow = this.w < 600;
     const upH = voiced ? RHYTHM_H : 0; // 声部が2つある曲は、上にも上の声部の符尾の段
-    const gap = Math.max(18, Math.min(narrow ? 30 : 54, (this.h - 34 - upH - RHYTHM_H - 40) / stringCount));
+    const pad = this.h < 400 ? 12 : 40; // 上下の余白。背の低い画面（スマホの横持ち）では詰めて、弦の間隔（数字の大きさ）に回す
+    const gap = Math.max(18, Math.min(narrow ? 30 : 54, (this.h - 34 - upH - RHYTHM_H - pad) / stringCount));
     const lanesH = gap * stringCount;
     const top = Math.max(0, (this.h - (34 + upH + lanesH + RHYTHM_H + 20)) / 2); // 下にリズム（符尾・連桁）の段
     const laneTop = top + 34 + upH;
+    const noteH = Math.min(36, gap * 0.74);
     const lanes = [];
     for (let i = 0; i < stringCount; i++) lanes.push(laneTop + gap * (i + 0.5));
     return {
       top, bottom: laneTop + lanesH + RHYTHM_H + 6, lanes, gap,
-      hitX: narrow ? 66 : Math.max(120, this.w * 0.22), noteH: Math.min(36, gap * 0.74),
-      pps: this.pps * (narrow ? 0.6 : 1), // 1秒あたりのピクセル
+      hitX: narrow ? 66 : Math.max(120, this.w * 0.22), noteH,
+      // 1秒あたりのピクセル。音符が小さい（弦を詰めた）画面では、音符の大きさに合わせて流れる速さを落とす。
+      // 速さが同じだと、小さな数字が速く流れて読み取れない（音符の間隔の設定はこの速さに掛かる）
+      pps: this.pps * Math.min(1, noteH / 36),
     };
   }
 
