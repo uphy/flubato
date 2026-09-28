@@ -245,20 +245,6 @@ export class SheetView {
         drawDirections(g, bar, bar.jumpTo, b.x + 5 * k + g.measureText(String(bar.number)).width + 6 * k, b.x + b.w - 5 * k,
           upper - stringGap * 0.75, Math.max(10, Math.round(12 * k)), C.accent);
       }
-      // 拍子記号（弦の線は記号のところで切る）
-      for (const b of row) {
-        const sig = this.sigOf.get(b.i);
-        if (!sig) continue;
-        const sx = b.x + 6 * k + sig.w / 2, sf = Math.round(Math.min(staffH * 0.42, 26 * k));
-        for (let s = 1; s <= chart.stringCount; s++) {
-          const key = `${ri}:${s}`;
-          if (!gaps.has(key)) gaps.set(key, []);
-          gaps.get(key).push([sx - sf * 0.45, sx + sf * 0.45]);
-        }
-        g.font = `600 ${sf}px ${FONT}`; g.textAlign = 'center'; g.fillStyle = C.faint; // 数字より控えめに
-        g.fillText(String(sig.num), sx, top + staffH * 0.27);
-        g.fillText(String(sig.den), sx, top + staffH * 0.73);
-      }
       // 弦（数字のところは切る）
       g.strokeStyle = C.string; g.lineWidth = 1;
       for (let s = 1; s <= chart.stringCount; s++) {
@@ -269,6 +255,15 @@ export class SheetView {
         for (const [a, b] of gs) { if (a > cx) { g.moveTo(cx, y); g.lineTo(a, y); } cx = Math.max(cx, b); }
         if (cx < x1) { g.moveTo(cx, y); g.lineTo(x1, y); }
         g.stroke();
+      }
+      // 拍子記号（弦の線の上に重ねる。線は切らない）
+      for (const b of row) {
+        const sig = this.sigOf.get(b.i);
+        if (!sig) continue;
+        const sx = b.x + 6 * k + sig.w / 2, sf = Math.round(Math.min(staffH * 0.42, 26 * k));
+        g.font = `600 ${sf}px ${FONT}`; g.textAlign = 'center'; g.fillStyle = C.faint; // 数字より控えめに
+        g.fillText(String(sig.num), sx, top + staffH * 0.27);
+        g.fillText(String(sig.den), sx, top + staffH * 0.73);
       }
       // 小節線（段の頭と、曲の終わりは太く）
       const barLine = (x, w = 1, color = C.barline) => {
