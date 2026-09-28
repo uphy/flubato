@@ -11,12 +11,14 @@ export class DemoPlayer {
     this.cache = new Map(); // `${kind}:${midi}` → { buffer, rate }
     this.out = null; // 鳴らしている間だけある
     this.voices = new Map(); // 弦 → 最後に予約した音 { src, gain }
+    this.rate = 1; // 速さ（1 = 譜面どおり）。音の高さは変えず、鳴らす間隔だけを変える
   }
 
   get playing() { return this.out !== null; }
 
   /** 曲の from 秒から、曲の終わりまで鳴らす */
-  start(chart, from) {
+  start(chart, from, rate = this.rate) {
+    this.rate = rate;
     this.stop();
     const a = this.audio;
     this.chart = chart;
@@ -30,7 +32,13 @@ export class DemoPlayer {
   }
 
   /** いま鳴っている曲の時刻（秒） */
-  get pos() { return this.song0 + (this.audio.currentTime - this.ctx0); }
+  get pos() { return this.song0 + (this.audio.currentTime - this.ctx0) * this.rate; }
+
+  /** 鳴らしている途中で速さを変える（いまの位置から先を、新しい速さで） */
+  setRate(rate) {
+    if (this.out) { this.song0 = this.pos; this.ctx0 = this.audio.currentTime; }
+    this.rate = rate;
+  }
 
   /** 最後の音を鳴らして、響きも消えたか */
   get done() { return this.pos > this.chart.duration + 1.5; }
@@ -54,7 +62,7 @@ export class DemoPlayer {
 
   _play(n) {
     const a = this.audio;
-    const at = Math.max(a.currentTime, this.ctx0 + n.t - this.song0);
+    const at = Math.max(a.currentTime, this.ctx0 + (n.t - this.song0) / this.rate);
     // 同じ弦で次の音を弾いたら、前の音は止まる。それまでは鳴らしっぱなし（ギターの響きのまま）
     const prev = this.voices.get(n.string);
     if (prev) { prev.gain.gain.setTargetAtTime(0, at, 0.012); prev.src.stop(at + 0.1); }
@@ -68,8 +76,8 @@ export class DemoPlayer {
     src.start(at);
     if (n.staccato) {
       // スタッカートは譜面の長さ（書かれた長さの半分）で止める。止めた音は次の音で止め直さない
-      gain.gain.setTargetAtTime(0, at + n.dur, 0.012);
-      src.stop(at + n.dur + 0.1);
+      gain.gain.setTargetAtTime(0, at + n.dur / this.rate, 0.012);
+      src.stop(at + n.dur / this.rate + 0.1);
       this.voices.delete(n.string);
     } else this.voices.set(n.string, { src, gain });
   }
