@@ -224,7 +224,20 @@ body.reviewing #stage { left: 300px; width: calc(100% - 300px); }
 @media (max-width: 980px) { .hud-sub, #song-meta { display: none; } .brand span { display: none; } }
 /* ---- スマホ ---- */
 @media (hover: none) and (pointer: coarse) { #play kbd, .keys-sec { display: none; } }
-@media (max-height: 500px) { .transport .hint { display: none; } } /* スマホの横持ち: 下の帯を1段に収め、譜面を広く見せる */
+/* スマホの横持ち: 上下の帯を詰めて1段に収め、譜面を広く見せる。つまみの切り替えは絵だけにする（名前は title に）。
+   弾いている間は「とめる」だけを残す */
+@media (max-height: 500px) {
+  .transport .hint { display: none; }
+  .top { padding-top: 5px; padding-bottom: 5px; }
+  .transport { padding: 6px 16px; gap: 10px; }
+  .t-left, .t-right { flex-wrap: nowrap; gap: 8px; }
+  .transport .chip { padding: 5px 9px; }
+  .transport .chip .lbl { display: none; }
+  #speed { width: 80px; }
+  #play { min-width: 150px; padding: 8px 20px; }
+  #play kbd { display: none; }
+  body.live .transport .t-left, body.live .transport .t-right { visibility: hidden; }
+}
 @media (max-width: 720px) {
   /* 上の帯: 1段目に曲名とボタン、2段目にモードと正解率 */
   .top { grid-template-columns: minmax(0, 1fr) auto auto auto auto; grid-template-areas: "left rec tuner mic gear" "seg hud hud hud hud"; gap: 8px; padding: 8px 12px; }
@@ -408,7 +421,7 @@ body.reviewing #stage { left: 300px; width: calc(100% - 300px); }
 <footer class="transport">
   <div class="t-left">
     <span class="field game-only">小節<select id="from" title="はじめる小節"></select><span class="game-only">〜</span><select id="to" class="game-only" title="おわる小節"></select></span>
-    <label class="chip game-only" title="範囲をくり返す"><input type="checkbox" id="loop"><svg class="i"><use href="#i-loop"/></svg>くり返す</label>
+    <label class="chip game-only" title="範囲をくり返す"><input type="checkbox" id="loop"><svg class="i"><use href="#i-loop"/></svg><span class="lbl">くり返す</span></label>
     <span class="t-demo practice-only">
       <button id="demo-top" class="icon-btn" title="1小節目に戻る"><svg class="i"><use href="#i-prev"/></svg></button>
       <button id="demo" title="譜面の音を鳴らして聞く（ヘッドホンで）。聞いている間は、弾いた音を聞き取らない"></button>
@@ -422,8 +435,8 @@ body.reviewing #stage { left: 300px; width: calc(100% - 300px); }
   <button id="play" class="primary"></button>
   <div class="t-right">
     <span class="field game-only" title="曲の速さ">速さ<input type="range" id="speed" min="40" max="120" step="5" value="100"><span id="speed-v"></span></span>
-    <label class="chip game-only" title="曲のテンポを、弾く人の溜め・走りに少しずつ合わせる。弾くはずの音を過ぎても、少し待つ"><input type="checkbox" id="follow"><svg class="i"><use href="#i-follow"/></svg>テンポを合わせる</label>
-    <label class="chip game-only" title="拍に合わせてクリックを鳴らす"><input type="checkbox" id="metro"><svg class="i"><use href="#i-metro"/></svg>メトロノーム</label>
+    <label class="chip game-only" title="曲のテンポを、弾く人の溜め・走りに少しずつ合わせる。弾くはずの音を過ぎても、少し待つ"><input type="checkbox" id="follow"><svg class="i"><use href="#i-follow"/></svg><span class="lbl">テンポを合わせる</span></label>
+    <label class="chip game-only" title="拍に合わせてクリックを鳴らす"><input type="checkbox" id="metro"><svg class="i"><use href="#i-metro"/></svg><span class="lbl">メトロノーム</span></label>
     <span class="hint practice-only">止まっても待ちます。弾き直してもついていきます</span>
   </div>
 </footer>
