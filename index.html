@@ -144,7 +144,8 @@ body.live .t-demo { display: none; } /* 弾いている間は使わないので�
 .levelbar::after { content: ''; display: block; height: 100%; width: calc(var(--lv, 0) * 100%); background: var(--good); transition: width 60ms; }
 #lat { color: var(--dim); font-weight: 400; }
 .lib-add { justify-content: center; width: 100%; margin-top: 16px; padding: 9px 12px; }
-#lib-list { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 4px; }
+/* 列幅を指定しないと、長い曲名に合わせて列が広がり、× が画面の外へ出る */
+#lib-list { list-style: none; margin: 16px 0 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
 #lib-list li { display: flex; align-items: center; gap: 4px; border-radius: 9px; border: 1px solid transparent; }
 #lib-list li:hover { background: var(--raised); }
 #lib-list li[aria-current=true] { background: var(--raised); border-color: var(--line-strong); box-shadow: inset 3px 0 0 var(--accent); }
