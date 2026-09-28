@@ -56,3 +56,13 @@ test('音の入ったボイスが2つある小節だけ、リズムを上下の�
   assert.deepEqual(bar0.filter(r => !r.up).map(r => [r.duration, r.strings.sort()]), [[2, [6]], [2, [4, 5]]]);
   assert.deepEqual(c.rhythm.filter(r => r.bar === 1).map(r => [r.up, r.duration, r.rest]), [[false, 1, false]], '休符だけのボイスは描かない');
 });
+
+test('レットリングとアクセントは印が付く', () => {
+  const c = buildChart(scoreFromAlphaTex(`\\tempo 60 . 3.3{lr}.4 3.3{ac}.4 3.3{hac}.4 3.3.4`), 0);
+  assert.deepEqual(c.notes.map(n => [n.letRing, n.accent]), [[true, 0], [false, 1], [false, 2], [false, 0]]);
+});
+
+test('タイでつないだ音は、つないだ先までの長さになる', () => {
+  const c = buildChart(scoreFromAlphaTex(`\\tempo 60 . 5.2.2 -.2.4 3.3.4 | -.3.1`), 0);
+  assert.deepEqual(c.notes.map(n => [n.t, n.dur]), [[0, 3], [3, 5]]);
+});

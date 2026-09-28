@@ -32,8 +32,10 @@ export function guitarTracks(score) {
 
 /**
  * 譜面を作る。
- * notes: { id, t, dur, string(1=1弦), fret, midi, kind('normal'|'dead'|'harmonic'|'legato'), grace, staccato, group, bar, voice（0始まり） }
+ * notes: { id, t, dur, string(1=1弦), fret, midi, kind('normal'|'dead'|'harmonic'|'legato'), grace, staccato, letRing, accent, group, bar, voice（0始まり） }
+ *   dur: 書かれた長さ（タイでつないだ先まで）
  *   grace: 装飾音なら { slot }。slot は本音符までに挟まる装飾音の数（0 = 本音符の直前）
+ *   accent: 0 = なし、1 = アクセント（>）、2 = 強いアクセント（^）
  * bars:  { t, index(0始まり), number(表示用), voiced（符尾を上下に分ける） } を再生順に
  * group: 同時に弾く音のまとまり（和音）。groups[g] = { t, noteIds, bar, grace（装飾音だけの和音なら true） }
  */
@@ -74,6 +76,7 @@ export function buildChart(score, trackIndex) {
   const bars = [];
   const beats = []; // メトロノーム用 { t, first }
   const rawRhythm = []; // 譜面にリズムを描くための拍（休符も） { bar, tick, t, duration, dots, tuplet, rest, voice, strings }
+  const idOf = new Map(); // alphaTab の音 → 最後に入れた notes の id（タイの先の長さを、つないだ元の音に足すため）
   for (const mb of lookups) {
     bars.push({
       t: tickToSec(mb.start), end: tickToSec(mb.end), index: mb.masterBar.index, number: mb.masterBar.index + 1,
@@ -106,7 +109,12 @@ export function buildChart(score, trackIndex) {
         const dur = Math.max(0.05, tickToSec(startTick + beat.playbackDuration) - t);
         const ids = [];
         for (const n of beat.notes) {
-          if (n.isTieDestination) continue; // 前の音をのばしているだけ
+          if (n.isTieDestination) {
+            // 前の音をのばしているだけ。元の音の長さをここまでのばす
+            const o = idOf.get(n.tieOrigin);
+            if (o !== undefined) { idOf.set(n, o); notes[o].dur = Math.max(notes[o].dur, t + dur - notes[o].t); }
+            continue;
+          }
           const guitarString = stringCount - n.string + 1;
           const open = tuning[guitarString - 1] + capo;
           let kind = 'normal';
@@ -120,8 +128,11 @@ export function buildChart(score, trackIndex) {
           // スタッカートは書かれた長さの半分で切る
           notes.push({
             id, t, dur: n.isStaccato ? Math.max(0.05, dur / 2) : dur, string: guitarString, fret: n.fret, midi, kind,
-            grace: grace ? { slot: 0 } : null, staccato: n.isStaccato, group: groups.length, bar: bars.length - 1, voice: beat.voice.index,
+            grace: grace ? { slot: 0 } : null, staccato: n.isStaccato, letRing: n.isLetRing,
+            accent: n.accentuated === at.model.AccentuationType.Heavy ? 2 : n.accentuated === at.model.AccentuationType.Normal ? 1 : 0,
+            group: groups.length, bar: bars.length - 1, voice: beat.voice.index,
           });
+          idOf.set(n, id);
           ids.push(id);
         }
         if (ids.length > 0) groups.push({ t, noteIds: ids, bar: bars.length - 1 });
