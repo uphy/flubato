@@ -53,6 +53,7 @@ export class View {
     g.fillStyle = BG;
     g.fillRect(0, 0, W, H);
     const xOf = t => L.hitX + (t - song) * this.pps;
+    const nh = L.noteH, nw = Math.max(nh * 1.2, 28); // 音符の高さと幅
     const tMin = song - L.hitX / this.pps - 0.5, tMax = song + (W - L.hitX) / this.pps + 0.5;
     const yTop = L.lanes[0] - L.gap / 2, yBot = L.lanes[L.lanes.length - 1] + L.gap / 2;
 
@@ -87,9 +88,11 @@ export class View {
       g.fillStyle = 'rgba(255,255,255,0.12)';
       g.fillRect(Math.round(xOf(bt.t)), yTop, 1, yBot - yTop);
     }
+    // 小節線は1拍目の音符の手前に引く（五線譜と同じ）。音符に重ねると、上の声部の符尾・小節線・下の声部の符尾が
+    // 1本の線につながって見える
     for (const bar of chart.bars) {
       if (bar.t < tMin - 10 || bar.t > tMax) continue;
-      const x = Math.round(xOf(bar.t));
+      const x = Math.round(xOf(bar.t) - nw / 2 - 6);
       g.fillStyle = 'rgba(255,255,255,0.32)';
       g.fillRect(x - 1, yTop - 10, 2, yBot - yTop + 10);
       g.fillStyle = 'rgba(236,238,243,0.45)';
@@ -105,15 +108,13 @@ export class View {
 
     // リズム（見えている小節ぶん。連符の数字の区切りが画面の端でずれないように小節ごと）
     const visBars = new Set(chart.bars.map((b, i) => (b.end >= tMin && b.t <= tMax ? i : -1)).filter(i => i >= 0));
-    // 符尾は五線譜の符頭と同じく、上向きは音符の右の端、下向きは左の端に付ける。
-    // 真ん中に付けると、小節線・拍の線と一直線につながって、上と下の声部が1本の線に見える
-    const nh = L.noteH, nw = Math.max(nh * 1.2, 28);
-    const stemX = r => xOf(r.t) + (r.up ? 1 : -1) * (nw / 2 - 0.5);
+    // 符尾は音符の上下の端から（音符は後から重ねて描く）
     const stemFrom = r => {
       if (!r.strings.length) return undefined;
-      return L.lanes[(r.up ? Math.min(...r.strings) : Math.max(...r.strings)) - 1];
+      const s = r.up ? Math.min(...r.strings) : Math.max(...r.strings);
+      return L.lanes[s - 1] + (r.up ? -1 : 1) * L.noteH / 2;
     };
-    drawRhythm(g, chart, chart.rhythm.filter(r => visBars.has(r.bar)), stemX, { L: yBot - 4, T: yTop + 4, stemFrom }, 'rgba(236,238,243,0.4)');
+    drawRhythm(g, chart, chart.rhythm.filter(r => visBars.has(r.bar)), r => xOf(r.t), { L: yBot - 4, T: yTop + 4, stemFrom }, 'rgba(236,238,243,0.4)');
 
     // 和音のつなぎ線
     for (const grp of chart.groups) {
