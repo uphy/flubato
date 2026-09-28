@@ -184,6 +184,14 @@ export class View {
           g.moveTo(x0, y - gh / 2 - 2); g.quadraticCurveTo((x0 + x) / 2, y0 - 10, x - nw / 4, y - nh / 2 - 2);
         } else g.arc(x - nw / 2 - 2, y - nh / 2 - 2, 5, Math.PI, 1.5 * Math.PI);
         g.stroke();
+        // ハンマリング・プリング・スライドは H・P・S を音の左上に添える
+        const tag = { h: 'H', p: 'P', s: 'S' }[n.legato];
+        if (tag) {
+          const font = g.font;
+          g.font = `700 ${Math.round(nh * 0.42)}px ${FONT}`; g.fillStyle = '#ffffffcc';
+          g.fillText(tag, x - nw / 2 - 4, y - nh / 2 - nh * 0.6);
+          g.font = font;
+        }
       }
       g.globalAlpha = 1;
     };

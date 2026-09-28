@@ -57,10 +57,11 @@ export function guitarTracks(score) {
 
 /**
  * 譜面を作る。
- * notes: { id, t, dur, string(1=1弦), fret, midi, kind('normal'|'dead'|'harmonic'|'legato'), grace, staccato, letRing, palmMute, accent, tenuto, ghost, level, bend, group, bar, voice（0始まり） }
+ * notes: { id, t, dur, string(1=1弦), fret, midi, kind('normal'|'dead'|'harmonic'|'legato'), legato, grace, staccato, letRing, palmMute, accent, tenuto, ghost, level, bend, group, bar, voice（0始まり） }
  *   dur: 書かれた長さ（タイでつないだ先まで）
  *   midi: 弾いた瞬間に鳴る高さ（プリベンドなら上げたあとの高さ）
  *   bend: チョーキングなら [{ t（音の頭から何秒）, semis（押さえたフレットから何半音上げているか） }]、なければ null
+ *   legato: レガートの種類。'h'（ハンマリング）・'p'（プリング）・'s'（スライド）。前の音と同じフレットのスラーなど、どれでもなければ null
  *   grace: 装飾音なら { slot }。slot は本音符までに挟まる装飾音の数（0 = 本音符の直前）
  *   accent: 0 = なし、1 = アクセント（>）、2 = 強いアクセント（マルカート、^）
  *   ghost: ゴーストノート（かっこで囲んで、弱く弾く音）
@@ -167,12 +168,13 @@ export function buildChart(score, trackIndex) {
             kind = 'harmonic';
             midi = open + NATURAL_HARMONIC[n.fret];
           } else if (n.isHammerPullDestination || n.isSlurDestination || n.slideOrigin) kind = 'legato';
+          const legato = kind === 'legato' ? legatoType(n) : null;
           const bend = kind !== 'harmonic' && n.hasBend ? bendPoints(n, 0, dur) : null;
           if (bend) midi += Math.round(bend[0].semis);
           const id = notes.length;
           // スタッカートは書かれた長さの半分で切る
           notes.push({
-            id, t, dur: n.isStaccato ? Math.max(0.05, dur / 2) : dur, string: guitarString, fret: n.fret, midi, kind,
+            id, t, dur: n.isStaccato ? Math.max(0.05, dur / 2) : dur, string: guitarString, fret: n.fret, midi, kind, legato,
             grace: grace ? { slot: 0 } : null, staccato: n.isStaccato, letRing: n.isLetRing, palmMute: n.isPalmMute,
             accent: n.accentuated === at.model.AccentuationType.Heavy ? 2 : n.accentuated === at.model.AccentuationType.Normal ? 1 : 0,
             tenuto: n.accentuated === at.model.AccentuationType.Tenuto, ghost: n.isGhost, level: 0, bend,
@@ -252,6 +254,14 @@ export function buildChart(score, trackIndex) {
       return 60 / seg.bpm;
     },
   };
+}
+
+/** レガートで弾く音が、前の音からハンマリング・プリング・スライドのどれでつながるか。ハンマリングとプリングは、前の音よりフレットが上か下かで分ける */
+function legatoType(n) {
+  if (n.slideOrigin) return 's';
+  const from = n.hammerPullOrigin ?? n.slurOrigin;
+  if (!from || from.fret === n.fret) return null;
+  return from.fret < n.fret ? 'h' : 'p';
 }
 
 /**

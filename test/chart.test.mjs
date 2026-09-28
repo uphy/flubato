@@ -116,3 +116,9 @@ test('チューニングとカポを、弾く前に合わせるものとして�
   assert.equal(setupLabel({ tuning: midi('E4 B3 G3 D3 A2 E2'), capo: 2 }), 'カポ 2');
   assert.equal(setupLabel({ tuning: midi('D4 A3 G3 D3 A2 D2'), capo: 6 }), 'DADGAD · カポ 6');
 });
+
+test('レガートの種類（ハンマリング・プリング・スライド）を分ける', () => {
+  const c = buildChart(scoreFromAlphaTex(`\\tempo 60 . 5.3{h}.4 7.3{h}.4 5.3{sl}.4 9.3.4 | 9.3.4`), 0);
+  assert.deepEqual(c.notes.map(n => [n.fret, n.kind, n.legato]),
+    [[5, 'normal', null], [7, 'legato', 'h'], [5, 'legato', 'p'], [9, 'legato', 's'], [9, 'normal', null]]);
+});
