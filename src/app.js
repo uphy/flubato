@@ -1236,10 +1236,24 @@ window.addEventListener('keydown', e => {
 });
 // 窓の大きさだけでなく、上の帯の折り返し（スマホで曲名が変わったとき）で譜面の高さが変わっても描き直す
 new ResizeObserver(() => { view.resize(); sheet.resize(); }).observe($('stage'));
-window.addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('drag'); });
-window.addEventListener('dragleave', () => document.body.classList.remove('drag'));
+// ファイルを画面にドロップして開く。dragenter / dragleave は下の要素を1つまたぐたびに対で届くので、
+// 数を数えて、0 に戻ったら窓の外へ出たとみなす（dragleave だけで消すと、要素の境目で案内が点滅する）
+let dragDepth = 0;
+const isFileDrag = e => e.dataTransfer?.types.includes('Files');
+window.addEventListener('dragenter', e => {
+  if (!isFileDrag(e)) return;
+  dragDepth++;
+  document.body.classList.add('drag');
+});
+window.addEventListener('dragleave', e => {
+  if (!isFileDrag(e)) return;
+  if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('drag'); }
+});
+window.addEventListener('dragover', e => { if (isFileDrag(e)) e.preventDefault(); });
 window.addEventListener('drop', e => {
-  e.preventDefault(); document.body.classList.remove('drag');
+  if (!isFileDrag(e)) return;
+  e.preventDefault();
+  dragDepth = 0; document.body.classList.remove('drag');
   const f = e.dataTransfer.files[0]; if (f) openFile(f);
 });
 
