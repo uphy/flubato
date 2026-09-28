@@ -1,6 +1,7 @@
 // 描画。上がタブ譜と同じ向き（いちばん上が1弦）のレーンで、音符が右から流れてくる。
 
 import { drawRhythm, RHYTHM_H } from './rhythm.js';
+import { drawDirections } from './sheet.js';
 
 export const STRING_COLORS = ['#c08bff', '#4fdc86', '#ffa24a', '#52a8ff', '#ffd84a', '#ff6275', '#5ee0d8', '#b0b6c4'];
 const BG = '#0e1016';
@@ -110,7 +111,9 @@ export class View {
       g.fillStyle = 'rgba(255,255,255,0.16)';
       g.fillRect(x, y0, 1, y1 - y0);
       g.fillStyle = 'rgba(236,238,243,0.45)';
-      g.fillText(String(bar.number), x + 6, yTop - 12 - (chart.voiced ? RHYTHM_H : 0));
+      const ny = yTop - 12 - (chart.voiced ? RHYTHM_H : 0);
+      g.fillText(String(bar.number), x + 6, ny);
+      drawDirections(g, bar, bar.jumpTo, x + 6 + g.measureText(String(bar.number)).width + 8, Math.round(xOf(bar.end) - nw / 2 - 6) - 6, ny, 13, '#ffd24a');
     }
 
     // 弦（低い弦ほど太く）

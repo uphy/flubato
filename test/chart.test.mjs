@@ -122,3 +122,13 @@ test('レガートの種類（ハンマリング・プリング・スライド�
   assert.deepEqual(c.notes.map(n => [n.fret, n.kind, n.legato]),
     [[5, 'normal', null], [7, 'legato', 'h'], [5, 'legato', 'p'], [9, 'legato', 's'], [9, 'normal', null]]);
 });
+
+test('D.S.・コーダの記号を小節に持たせ、飛んだところには飛び先の番号を付ける', () => {
+  const c = buildChart(scoreFromAlphaTex(`\\tempo 120 . \\track "G" \\staff {tabs}
+    0.1.1 | \\jump Segno 1.1.1 | \\jump DaCoda 2.1.1 | \\jump DalSegnoAlCoda 3.1.1 | \\jump Coda 4.1.1`), 0);
+  assert.deepEqual(c.bars.map(b => b.number), [1, 2, 3, 4, 2, 3, 5]);
+  assert.deepEqual(c.bars.map(b => [b.directions.start, b.directions.end, b.jumpTo]), [
+    [[], [], null], [['segno'], [], null], [[], ['To Coda'], null], [[], ['D.S. al Coda'], 2],
+    [['segno'], [], null], [[], ['To Coda'], 5], [['coda'], [], null],
+  ]);
+});
