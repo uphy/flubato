@@ -361,11 +361,11 @@ function tick() {
       stumbleBars: S.listening ? null : S.lastStumbles,
     });
   } else {
-    // カウントの何拍目か（はじめの1小節ぶん）
+    // カウントダウンのあと何拍か（はじめの1小節ぶん）
     let count = null;
     if (S.playing && S.range && S.song < S.range.from) {
       const c = countIn(S.range.from), left = Math.ceil((S.range.from - S.song) / c.beat - 1e-6);
-      if (left >= 1 && left <= c.n) count = { k: c.n - left + 1, n: c.n };
+      if (left >= 1 && left <= c.n) count = { left, n: c.n };
     }
     if (gameSheet()) {
       sheet.draw(S.chart, { song: S.song, listening: S.playing, played: S.judge ? judgedGroups() : null, conf: 1, pos: -1 });
