@@ -43,7 +43,7 @@ export class DemoPlayer {
   }
 
   /** 最後の音を鳴らして、響きも消えたか */
-  get done() { return this.pos > this.chart.duration + 1.5; }
+  get done() { return this.pos > this.chart.duration + 3; }
 
   /** 毎フレーム呼ぶ: 少し先までの音を予約する */
   pump() {
@@ -118,9 +118,11 @@ export class DemoPlayer {
     gain.gain.value = (n.kind === 'legato' ? 0.45 : n.string >= 4 ? 0.6 : 0.8) * 10 ** (steps * STEP_DB / 20);
     src.connect(gain).connect(p.out);
     src.start(at);
-    // 書かれた長さで止める（スタッカートは譜面の時点で半分になっている）。レットリングは同じ弦で次を弾くまで鳴らしっぱなし
+    // 書かれた長さで止める（スタッカートは譜面の時点で半分になっている）。レットリングは同じ弦で次を弾くまで鳴らしっぱなし。
+    // 開放弦も、押さえた指を離して止めることがないので、同じ弦で次を弾くまで鳴らす（スタッカートと P.M. はわざと止める音なので切る）
+    const open = n.fret === 0 && (n.kind === 'normal' || n.kind === 'legato') && !n.staccato && !n.palmMute;
     let end = Infinity;
-    if (!n.letRing && !p.ring) {
+    if (!n.letRing && !open && !p.ring) {
       end = at + Math.max(0.05, n.dur - (n.strum ?? 0)) / p.rate; // ずらして弾いた音も、書かれた終わりで止める
       gain.gain.setTargetAtTime(0, end, n.staccato ? 0.012 : 0.03);
       src.stop(end + 0.2);
@@ -145,18 +147,23 @@ export class DemoPlayer {
   }
 }
 
+const TAIL = 0.6; // 弾いた直後の大きい部分が落ちたあと、余韻として残る大きさ（弾いた瞬間を1として）
+const ATTACK_TAU = 0.2; // 弾いた直後の大きい部分が 1/e まで落ちる秒
+
 /**
- * 弦を弾いた音（Karplus-Strong）。tau は音が 1/e になるまでの秒（null なら音の高さで決める）。
+ * 弦を弾いた音（Karplus-Strong）。tau は余韻が 1/e になるまでの秒（null なら音の高さで決める）。
+ * 実物の弦と同じく、弾いた直後にすっと落ちてから、小さく長く残る（2段の減り方）。
+ * 余韻を長くしても、旋律を埋めやすい弾いた直後の大きさは変わらない。
  * soften は、はじめの雑音をならす回数（多いほど高い成分が減って、こもった音になる）。
  * 遅延の長さは整数なので、少し低めに作って playbackRate で正しい高さに戻す（高い音でも音程がずれない）
  */
 function pluck(sr, hz, tau, soften = 2) {
-  tau ??= Math.max(0.35, Math.min(1, 0.8 * Math.pow(110 / hz, 0.35))); // 低い音ほど長く響く（差はつけすぎない）
+  tau ??= Math.max(0.5, Math.min(2.5, 2.4 * Math.pow(110 / hz, 0.6))); // 低い音ほど長く響く
   const period = sr / hz;
   // 下のループは y[n] = (y[n-L] + y[n-L+1]) / 2 なので、1周は L - 0.5 サンプル
   const L = Math.max(2, Math.floor(period + 0.5));
   const rate = (L - 0.5) / period;
-  const out = new Float32Array(Math.ceil(Math.min(4, tau * 5) * sr));
+  const out = new Float32Array(Math.ceil(Math.min(5, tau * 5) * sr));
   let seed = Math.round(hz * 1000) >>> 0;
   const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32) * 2 - 1;
   const buf = new Float32Array(L);
@@ -174,8 +181,13 @@ function pluck(sr, hz, tau, soften = 2) {
     out[s] = v;
     peak = Math.max(peak, Math.abs(v));
   }
-  const fade = Math.min(out.length, Math.round(0.05 * sr));
-  for (let s = 0; s < out.length; s++) out[s] *= (s >= out.length - fade ? (out.length - s) / fade : 1) / peak;
+  // 打ち切る末尾は、余韻が残っていてもぷつりと切れないよう長めに消す
+  const fade = Math.min(out.length, Math.round((tau < 1 ? 0.05 : 0.3) * sr));
+  const twoStage = tau > 0.2; // デッドノートや P.M. のようにすぐ消える音は、もとの減り方のまま
+  for (let s = 0; s < out.length; s++) {
+    const env = twoStage ? TAIL + (1 - TAIL) * Math.exp(-s / (ATTACK_TAU * sr)) : 1;
+    out[s] *= env * (s >= out.length - fade ? (out.length - s) / fade : 1) / peak;
+  }
   return { data: out, rate };
 }
 
